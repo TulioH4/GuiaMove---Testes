@@ -1,0 +1,14 @@
+# SeeMove — dependências
+# pip install -r requirements.txt
+
+pyttsx3>=2.90
+numpy>=1.24
+sounddevice>=0.4.6
+flask>=3.0
+flask-socketio>=5.3
+opencv-python>=4.9
+mediapipe>=0.10
+
+# Para conectar a Balance Board real:
+# pip install hid
+# (funciona no Python 3.14, sem compilação)
