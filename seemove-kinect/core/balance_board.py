@@ -337,7 +337,7 @@ class BalanceBoardHardware:
             # (A partir daqui, a balança está em 0.0kg se não houver ninguém em cima)
             tl -= self._tare_values['top_left']
             tr -= self._tare_values['top_right']
-            bl -= self._tare_values['bottom_left']
+            bl -= self._tare_values['bottom_left'] 
             br -= self._tare_values['bottom_right']
 
             current_tl = max(0.0, tl)
@@ -361,7 +361,7 @@ class BalanceBoardHardware:
             if self._last_stable_sd is None:
                 self._last_stable_sd = [current_tl, current_tr, current_bl, current_br]
             else:
-                alpha = 0.05 # Nível de amortecimento extremo que testamos
+                alpha = 0.9 # Nível de amortecimento extremo que testamos
                 self._last_stable_sd[0] = (self._last_stable_sd[0] * (1 - alpha)) + (current_tl * alpha)
                 self._last_stable_sd[1] = (self._last_stable_sd[1] * (1 - alpha)) + (current_tr * alpha)
                 self._last_stable_sd[2] = (self._last_stable_sd[2] * (1 - alpha)) + (current_bl * alpha)
