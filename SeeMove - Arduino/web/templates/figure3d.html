@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SeeMove - Boneco 3D</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0f1117; --panel:#181c27; --panel2:#1f2637;
+    --line:rgba(255,255,255,.08); --text:#e8eaf0; --muted:#8b90a0;
+    --green:#1fcc8a; --blue:#4a9eff; --amber:#f5a623; --red:#ff5c5c;
+  }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+  }
+  #canvas3d { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hud {
+    position: fixed; inset: 14px 14px auto 14px; z-index: 2;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    pointer-events: none;
+  }
+  .brand {
+    height: 42px; display: flex; align-items: center; gap: 10px;
+    padding: 0 14px; background: rgba(24,28,39,.88);
+    border: 1px solid var(--line); border-radius: 8px;
+    backdrop-filter: blur(10px);
+  }
+  .mark {
+    width: 24px; height: 24px; border-radius: 6px; background: var(--green);
+    display: grid; place-items: center; color: #07110d; font-weight: 800;
+  }
+  .brand h1 { font-size: 15px; font-weight: 650; letter-spacing: 0; }
+  .status {
+    display: flex; align-items: center; gap: 7px;
+    height: 42px; padding: 0 14px; background: rgba(24,28,39,.88);
+    border: 1px solid var(--line); border-radius: 8px; color: var(--muted);
+    font-size: 12px; backdrop-filter: blur(10px);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #555d72; }
+  .dot.on { background: var(--green); box-shadow: 0 0 14px rgba(31,204,138,.9); }
+  .metrics {
+    margin-left: auto; display: grid; grid-template-columns: repeat(5, minmax(74px, auto));
+    gap: 8px; pointer-events: none;
+  }
+  .chip {
+    min-width: 74px; padding: 7px 10px; background: rgba(24,28,39,.88);
+    border: 1px solid var(--line); border-radius: 8px; backdrop-filter: blur(10px);
+  }
+  .chip .label { display: block; color: var(--muted); font-size: 10px; margin-bottom: 3px; }
+  .chip .value { display: block; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .value.ok { color: var(--green); } .value.warn { color: var(--amber); } .value.err { color: var(--red); }
+  .side {
+    position: fixed; right: 14px; bottom: 14px; width: min(320px, calc(100vw - 28px));
+    display: grid; gap: 10px; z-index: 2; pointer-events: none;
+  }
+  .panel {
+    background: rgba(24,28,39,.88); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px; backdrop-filter: blur(10px);
+  }
+  .panel-title { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+  .pressure-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .corner {
+    background: var(--panel2); border-radius: 6px; padding: 8px;
+    display: flex; align-items: center; justify-content: space-between;
+    border: 1px solid rgba(255,255,255,.05);
+  }
+  .corner span:first-child { color: var(--muted); font-size: 11px; }
+  .corner span:last-child { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .hint {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    color: rgba(232,234,240,.45); font-size: 11px; z-index: 2;
+    background: rgba(15,17,23,.7); border: 1px solid rgba(255,255,255,.05);
+    padding: 6px 12px; border-radius: 999px; pointer-events: none;
+  }
+  .waiting {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    color: var(--muted); font-size: 14px; line-height: 1.5; text-align: center;
+    z-index: 2; pointer-events: none; opacity: .9;
+  }
+  @media (max-width: 760px) {
+    .metrics { grid-template-columns: repeat(2, minmax(74px, auto)); margin-left: 0; }
+    .hud { align-items: flex-start; }
+    .side { left: 14px; right: 14px; width: auto; }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas3d"></canvas>
+
+<div class="hud">
+  <div class="brand">
+    <div class="mark">S</div>
+    <h1>Boneco 3D</h1>
+  </div>
+  <div class="status">
+    <div class="dot" id="connDot"></div>
+    <span id="connText">Aguardando plataforma</span>
+  </div>
+  <div class="metrics">
+    <div class="chip"><span class="label">X lateral</span><span class="value ok" id="mX">0.00</span></div>
+    <div class="chip"><span class="label">Y frente</span><span class="value ok" id="mY">0.00</span></div>
+    <div class="chip"><span class="label">Peso</span><span class="value ok" id="mTotal">0.0</span></div>
+    <div class="chip"><span class="label">Estabilidade</span><span class="value ok" id="mStability">100%</span></div>
+    <div class="chip"><span class="label">Postura</span><span class="value ok" id="mPosture">OK</span></div>
+  </div>
+</div>
+
+<div class="side">
+  <div class="panel">
+    <div class="panel-title">Pressao por canto</div>
+    <div class="pressure-grid">
+      <div class="corner"><span>Frente Esq</span><span id="vTL">0.0</span></div>
+      <div class="corner"><span>Frente Dir</span><span id="vTR">0.0</span></div>
+      <div class="corner"><span>Tras Esq</span><span id="vBL">0.0</span></div>
+      <div class="corner"><span>Tras Dir</span><span id="vBR">0.0</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="waiting" id="waiting">Conecte a plataforma Arduino<br>para iniciar o feedback visual</div>
+<div class="hint">Arraste para girar · Scroll para aproximar</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.2/client-dist/socket.io.min.js"></script>
+<script>
+const canvas = document.getElementById("canvas3d");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1117);
+scene.fog = new THREE.FogExp2(0x0f1117, 0.028);
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+const cameraTarget = new THREE.Vector3(0, 1.0, 0);
+
+scene.add(new THREE.AmbientLight(0x8fa4c7, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 1.1);
+key.position.set(3.8, 6, 4.5);
+key.castShadow = true;
+key.shadow.mapSize.set(1536, 1536);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x1fcc8a, 0.7);
+rim.position.set(-4, 2, -3);
+scene.add(rim);
+
+const floorGeo = new THREE.PlaneGeometry(9, 9);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x10141d, roughness: 0.9, metalness: 0.05 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(7, 14, 0x253149, 0x1a2130);
+grid.position.y = 0.003;
+scene.add(grid);
+
+const platform = new THREE.Group();
+platform.position.y = 0.06;
+scene.add(platform);
+
+const platformMat = new THREE.MeshStandardMaterial({ color: 0x20283a, roughness: 0.75 });
+const platformTopMat = new THREE.MeshStandardMaterial({ color: 0x263249, roughness: 0.65 });
+const board = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.1, 1.05), platformMat);
+board.castShadow = true;
+board.receiveShadow = true;
+platform.add(board);
+
+const top = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.018, 0.96), platformTopMat);
+top.position.y = 0.063;
+top.receiveShadow = true;
+platform.add(top);
+
+const edge = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.78, 0.105, 1.08)),
+  new THREE.LineBasicMaterial({ color: 0x1fcc8a, transparent: true, opacity: 0.45 })
+);
+platform.add(edge);
+
+function makePad(x, z, color) {
+  const mat = new THREE.MeshStandardMaterial({
+    color, roughness: 0.35, emissive: color, emissiveIntensity: 0.12
+  });
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.035, 28), mat);
+  mesh.position.set(x, 0.095, z);
+  mesh.castShadow = true;
+  platform.add(mesh);
+  return mesh;
+}
+const pads = {
+  tl: makePad(-0.64, -0.35, 0x1fcc8a),
+  tr: makePad( 0.64, -0.35, 0x1fcc8a),
+  bl: makePad(-0.64,  0.35, 0x4a9eff),
+  br: makePad( 0.64,  0.35, 0x4a9eff),
+};
+
+const cogGroup = new THREE.Group();
+platform.add(cogGroup);
+const cogRing = new THREE.Mesh(
+  new THREE.TorusGeometry(0.09, 0.009, 10, 44),
+  new THREE.MeshStandardMaterial({ color: 0xf5a623, emissive: 0xf5a623, emissiveIntensity: 0.6 })
+);
+cogRing.rotation.x = Math.PI / 2;
+cogGroup.position.y = 0.13;
+cogGroup.add(cogRing);
+const cogDot = new THREE.Mesh(
+  new THREE.SphereGeometry(0.035, 18, 18),
+  new THREE.MeshStandardMaterial({ color: 0xf5a623, emissive: 0xf5a623, emissiveIntensity: 0.4 })
+);
+cogDot.position.y = 0.035;
+cogGroup.add(cogDot);
+
+const MAT_SKIN = new THREE.MeshStandardMaterial({ color: 0x77bfff, roughness: 0.42 });
+const MAT_BODY = new THREE.MeshStandardMaterial({ color: 0x4a9eff, roughness: 0.45, metalness: 0.08 });
+const MAT_DARK = new THREE.MeshStandardMaterial({ color: 0x2d6fb6, roughness: 0.52 });
+const MAT_JOINT = new THREE.MeshStandardMaterial({ color: 0x1fcc8a, roughness: 0.32, emissive: 0x0b4c34, emissiveIntensity: 0.08 });
+const MAT_WARN = new THREE.MeshStandardMaterial({ color: 0xf5a623, roughness: 0.32, emissive: 0xf5a623, emissiveIntensity: 0.25 });
+
+function sphere(radius, mat) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(radius, 22, 18), mat);
+  m.castShadow = true;
+  return m;
+}
+function limb(radius, length, mat) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.92, length, 20), mat);
+  m.castShadow = true;
+  return m;
+}
+
+const avatar = new THREE.Group();
+avatar.position.set(0, 0.88, 0);
+scene.add(avatar);
+
+const hips = new THREE.Group();
+avatar.add(hips);
+
+const torso = limb(0.155, 0.38, MAT_BODY);
+torso.position.y = 0.28;
+hips.add(torso);
+
+const chest = new THREE.Group();
+chest.position.y = 0.52;
+hips.add(chest);
+
+const head = sphere(0.145, MAT_SKIN);
+head.position.y = 0.34;
+chest.add(head);
+const neck = limb(0.045, 0.07, MAT_BODY);
+neck.position.y = 0.16;
+chest.add(neck);
+
+function makeArm(side) {
+  const shoulder = new THREE.Group();
+  shoulder.position.set(side * 0.25, 0.08, 0);
+  chest.add(shoulder);
+  const shoulderBall = sphere(0.055, MAT_JOINT);
+  shoulder.add(shoulderBall);
+  const upper = limb(0.047, 0.22, MAT_DARK);
+  upper.position.y = -0.14;
+  shoulder.add(upper);
+  const elbow = new THREE.Group();
+  elbow.position.y = -0.28;
+  shoulder.add(elbow);
+  elbow.add(sphere(0.045, MAT_JOINT));
+  const lower = limb(0.04, 0.21, MAT_DARK);
+  lower.position.y = -0.13;
+  elbow.add(lower);
+  const hand = sphere(0.045, MAT_SKIN);
+  hand.position.y = -0.27;
+  elbow.add(hand);
+  return { shoulder, elbow };
+}
+const leftArm = makeArm(-1);
+const rightArm = makeArm(1);
+
+function makeLeg(side) {
+  const hip = new THREE.Group();
+  hip.position.set(side * 0.13, 0, 0);
+  hips.add(hip);
+  const hipBall = sphere(0.065, MAT_JOINT);
+  hip.add(hipBall);
+  const upper = limb(0.065, 0.34, MAT_BODY);
+  upper.position.y = -0.22;
+  hip.add(upper);
+  const knee = new THREE.Group();
+  knee.position.y = -0.45;
+  hip.add(knee);
+  const kneeBall = sphere(0.058, MAT_JOINT);
+  knee.add(kneeBall);
+  const lower = limb(0.055, 0.34, MAT_DARK);
+  lower.position.y = -0.22;
+  knee.add(lower);
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.055, 0.27), MAT_DARK);
+  foot.position.set(0, -0.43, -0.07);
+  foot.castShadow = true;
+  knee.add(foot);
+  return { hip, knee, kneeBall, foot };
+}
+const leftLeg = makeLeg(-1);
+const rightLeg = makeLeg(1);
+
+const target = {
+  x: 0, z: 0, y: 0.88,
+  leanX: 0, leanZ: 0, twistY: 0,
+  squat: 0, armSwing: 0,
+  cogX: 0, cogY: 0,
+  tl: 0, tr: 0, bl: 0, br: 0,
+};
+const current = { ...target };
+let lastFrameAt = 0;
+let hasLiveData = false;
+let idleTick = 0;
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clsBy(v, warn, err) {
+  const a = Math.abs(v);
+  return a >= err ? "err" : a >= warn ? "warn" : "ok";
+}
+function setMetric(id, value, cls) {
+  const el = document.getElementById(id);
+  el.textContent = value;
+  el.className = "value " + cls;
+}
+
+function applyFrame(d) {
+  hasLiveData = true;
+  lastFrameAt = Date.now();
+  document.getElementById("waiting").style.display = "none";
+  document.getElementById("connDot").className = "dot on";
+  document.getElementById("connText").textContent = "Plataforma ativa";
+
+  const x = clamp(Number(d.cog_x || 0), -1, 1);
+  const y = clamp(Number(d.cog_y || 0), -1, 1);
+  const total = Number(d.total_kg || 0);
+  const mag = Math.sqrt(x * x + y * y);
+  const exercise = d.exercise || "squat";
+
+  target.cogX = x;
+  target.cogY = y;
+  target.x = x * 0.20;
+  target.z = -y * 0.16;
+  target.leanZ = -x * 0.48;
+  target.leanX = y * 0.36;
+  target.twistY = x * y * 0.16;
+  target.armSwing = clamp(x * 0.45, -0.45, 0.45);
+
+  const front = Number(d.tl || 0) + Number(d.tr || 0);
+  const back = Number(d.bl || 0) + Number(d.br || 0);
+  const frontRatio = total > 0 ? front / total : 0.5;
+  const frontBack = Math.abs(frontRatio - 0.5) * 2;
+  const baseSquat = exercise === "squat" ? frontBack * 0.85 + mag * 0.35 : mag * 0.45;
+  target.squat = clamp(baseSquat, 0, 1);
+  target.y = 0.88 - target.squat * 0.22;
+
+  target.tl = Number(d.tl || 0);
+  target.tr = Number(d.tr || 0);
+  target.bl = Number(d.bl || 0);
+  target.br = Number(d.br || 0);
+
+  setMetric("mX", x.toFixed(2), clsBy(x, 0.18, 0.38));
+  setMetric("mY", y.toFixed(2), clsBy(y, 0.20, 0.42));
+  setMetric("mTotal", total.toFixed(1), total > 10 ? "ok" : "warn");
+  setMetric("mStability", `${Number(d.stability_pct || 0).toFixed(0)}%`, d.stability_pct >= 75 ? "ok" : d.stability_pct >= 50 ? "warn" : "err");
+  setMetric("mPosture", d.is_centered ? "OK" : "Corrigir", d.is_centered ? "ok" : "warn");
+
+  document.getElementById("vTL").textContent = target.tl.toFixed(1);
+  document.getElementById("vTR").textContent = target.tr.toFixed(1);
+  document.getElementById("vBL").textContent = target.bl.toFixed(1);
+  document.getElementById("vBR").textContent = target.br.toFixed(1);
+}
+
+function updatePose() {
+  if (hasLiveData && Date.now() - lastFrameAt > 2200) {
+    hasLiveData = false;
+    document.getElementById("connDot").className = "dot";
+    document.getElementById("connText").textContent = "Aguardando plataforma";
+    document.getElementById("waiting").style.display = "";
+  }
+
+  if (!hasLiveData) {
+    idleTick += 0.018;
+    target.x = Math.sin(idleTick * 0.7) * 0.025;
+    target.z = Math.cos(idleTick * 0.5) * 0.018;
+    target.y = 0.88;
+    target.leanZ = Math.sin(idleTick * 0.6) * 0.045;
+    target.leanX = Math.cos(idleTick * 0.5) * 0.035;
+    target.twistY = 0;
+    target.squat = 0.05 + Math.sin(idleTick) * 0.025;
+    target.armSwing = Math.sin(idleTick * 0.8) * 0.12;
+    target.cogX = 0;
+    target.cogY = 0;
+    target.tl = target.tr = target.bl = target.br = 0;
+  }
+
+  for (const key of Object.keys(target)) current[key] = lerp(current[key], target[key], 0.09);
+
+  avatar.position.set(current.x, current.y, current.z);
+  hips.rotation.x = current.leanX;
+  hips.rotation.z = current.leanZ;
+  hips.rotation.y = current.twistY;
+  chest.rotation.z = -current.leanZ * 0.24;
+
+  const squat = current.squat;
+  leftLeg.hip.rotation.x = -0.18 - squat * 0.82;
+  rightLeg.hip.rotation.x = -0.18 - squat * 0.82;
+  leftLeg.knee.rotation.x = squat * 1.35;
+  rightLeg.knee.rotation.x = squat * 1.35;
+  leftLeg.foot.rotation.x = -squat * 0.35;
+  rightLeg.foot.rotation.x = -squat * 0.35;
+
+  leftArm.shoulder.rotation.z = -0.34 + current.armSwing;
+  rightArm.shoulder.rotation.z = 0.34 + current.armSwing;
+  leftArm.shoulder.rotation.x = 0.22 + squat * 0.35;
+  rightArm.shoulder.rotation.x = 0.22 + squat * 0.35;
+  leftArm.elbow.rotation.x = 0.28 + squat * 0.42;
+  rightArm.elbow.rotation.x = 0.28 + squat * 0.42;
+
+  const danger = Math.abs(current.cogX) > 0.38 || Math.abs(current.cogY) > 0.42;
+  leftLeg.kneeBall.material = danger ? MAT_WARN : MAT_JOINT;
+  rightLeg.kneeBall.material = danger ? MAT_WARN : MAT_JOINT;
+
+  platform.rotation.x = -current.cogY * 0.08;
+  platform.rotation.z = current.cogX * 0.08;
+  cogGroup.position.x = current.cogX * 0.72;
+  cogGroup.position.z = -current.cogY * 0.40;
+  cogRing.rotation.z += 0.025;
+
+  const maxP = Math.max(current.tl, current.tr, current.bl, current.br, 1);
+  for (const [key, pad] of Object.entries(pads)) {
+    const value = current[key] || 0;
+    const k = clamp(value / maxP, 0, 1);
+    pad.scale.setScalar(0.72 + k * 0.58);
+    pad.scale.y = 1 + k * 1.7;
+    pad.material.emissiveIntensity = 0.08 + k * 0.55;
+  }
+}
+
+let dragging = false, lastX = 0, lastY = 0;
+let azimuth = 0.15, elevation = 0.18, radius = 4.4;
+canvas.addEventListener("mousedown", e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener("mouseup", () => dragging = false);
+canvas.addEventListener("mousemove", e => {
+  if (!dragging) return;
+  azimuth -= (e.clientX - lastX) * 0.008;
+  elevation -= (e.clientY - lastY) * 0.006;
+  elevation = clamp(elevation, -0.22, 0.9);
+  lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener("wheel", e => {
+  radius = clamp(radius + e.deltaY * 0.004, 2.4, 7.5);
+  e.preventDefault();
+}, { passive: false });
+
+function updateCamera() {
+  camera.position.x = cameraTarget.x + radius * Math.sin(azimuth) * Math.cos(elevation);
+  camera.position.y = cameraTarget.y + radius * Math.sin(elevation) + 0.45;
+  camera.position.z = cameraTarget.z + radius * Math.cos(azimuth) * Math.cos(elevation);
+  camera.lookAt(cameraTarget);
+}
+
+function resize() {
+  const w = canvas.clientWidth || window.innerWidth;
+  const h = canvas.clientHeight || window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+const socket = io();
+socket.on("connect", () => {
+  if (!hasLiveData) document.getElementById("connText").textContent = "Servidor conectado";
+});
+socket.on("disconnect", () => {
+  document.getElementById("connDot").className = "dot";
+  document.getElementById("connText").textContent = "Servidor desconectado";
+});
+socket.on("frame", applyFrame);
+
+function animate() {
+  requestAnimationFrame(animate);
+  updatePose();
+  updateCamera();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
