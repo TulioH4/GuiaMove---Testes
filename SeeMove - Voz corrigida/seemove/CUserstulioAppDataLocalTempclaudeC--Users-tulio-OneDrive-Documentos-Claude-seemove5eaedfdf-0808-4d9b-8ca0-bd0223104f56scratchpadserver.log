@@ -1,0 +1,45 @@
+=======================================================
+  SeeMove — Monitoramento postural
+  Kinect + MediaPipe Pose
+=======================================================
+
+[exercício] Agachamento
+[câmera]    índice 0
+[modelo]    complexidade 1
+[depth]     ativo (Kinect IR)
+ * Serving Flask app 'web.server'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+127.0.0.1 - - [22/Aug/2026 20:57:37] "GET /socket.io/?EIO=4&transport=polling&t=Q0hw8kC HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:37] "POST /socket.io/?EIO=4&transport=polling&t=Q0hw9A5&sid=upWJGS3HCYwMpOLCAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:37] "GET /socket.io/?EIO=4&transport=polling&t=Q0hw9A6&sid=upWJGS3HCYwMpOLCAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:38] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:38] "GET /socket.io/?EIO=4&transport=polling&t=Q0hw9YZ HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:38] "GET /api/voice/voices HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:38] "GET /api/voice/settings HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:38] "POST /socket.io/?EIO=4&transport=polling&t=Q0hw9aG&sid=KCErwTMoaOxsjz9JAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:38] "GET /socket.io/?EIO=4&transport=polling&t=Q0hw9aH&sid=KCErwTMoaOxsjz9JAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:40] "GET /api/state HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:57:51] "GET /api/state HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:23] "GET /socket.io/?EIO=4&transport=websocket&sid=KCErwTMoaOxsjz9JAAAC HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:24] "GET /socket.io/?EIO=4&transport=websocket&sid=upWJGS3HCYwMpOLCAAAA HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:32] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:32] "GET /socket.io/?EIO=4&transport=polling&t=Q0hwMhn HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:32] "GET /api/voice/voices HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:32] "GET /api/voice/settings HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:32] "POST /socket.io/?EIO=4&transport=polling&t=Q0hwMk7&sid=5otHZyq-sGTZWV42AAAE HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:32] "GET /socket.io/?EIO=4&transport=polling&t=Q0hwMkA&sid=5otHZyq-sGTZWV42AAAE HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:32] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [22/Aug/2026 20:58:32] "GET /socket.io/?EIO=4&transport=polling&t=Q0hwMkP&sid=5otHZyq-sGTZWV42AAAE HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:45] "POST /api/exercise/stand/start HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:46] "GET /api/state HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:57] "GET /api/exercises HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:57] "GET /api/voice/settings HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:57] "POST /api/voice/settings HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:57] "GET /api/voice/settings HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:57] "POST /api/exercise/balance/start HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:58:58] "GET /api/state HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:59:06] "GET /api/report/json HTTP/1.1" 200 -
+127.0.0.1 - - [22/Aug/2026 20:59:07] "POST /api/voice/test HTTP/1.1" 200 -

@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SeeMove — Kinect</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.2/client-dist/socket.io.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0c0e18;--bg2:#13162200;--bg2s:#131622;--bg3:#1a1e2e;--bg4:#222640;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);
+  --green:#1fcc8a;--gd:rgba(31,204,138,.12);
+  --blue:#4a9eff;--bd:rgba(74,158,255,.12);
+  --amber:#f5a623;--ad:rgba(245,166,35,.12);
+  --red:#ff5c5c;--rd:rgba(255,92,92,.12);
+  --purple:#a78bfa;--pd:rgba(167,139,250,.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#3e4558;
+  --r:12px;--rs:8px;
+  --shadow:0 8px 26px -10px rgba(0,0,0,.55), 0 1px 0 rgba(255,255,255,.03) inset;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh;padding:18px 22px}
+
+/* ── Header ── */
+header{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.logo{width:36px;height:36px;background:var(--green);border-radius:var(--rs);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.logo-txt h1{font-size:17px;font-weight:600;line-height:1.2}
+.logo-txt p{font-size:11px;color:var(--text2)}
+.hright{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pill{display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:999px;padding:5px 12px;font-size:12px;color:var(--text2);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--text3);flex-shrink:0}
+.dot.on{background:var(--green);animation:blink 1.6s ease-in-out infinite}
+.dot.err{background:var(--red)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.hbtn{display:flex;align-items:center;gap:6px;padding:6px 13px;border-radius:var(--rs);border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.hbtn:hover{border-color:var(--green);color:var(--text)}
+.hbtn.primary{background:var(--green);border-color:var(--green);color:#000;font-weight:600}
+.hbtn.primary:hover{background:#18b87a}
+.hbtn.danger{border-color:var(--red);color:var(--red)}
+
+/* ── Tracker banner ── */
+.banner{display:flex;align-items:center;gap:12px;padding:10px 15px;border-radius:var(--rs);border:1px solid var(--border);background:var(--bg2s);margin-bottom:12px;flex-wrap:wrap;transition:all .3s}
+.banner.on{border-color:var(--green);background:var(--gd)}
+.banner.warn{border-color:var(--amber);background:var(--ad)}
+.banner.err{border-color:var(--red);background:var(--rd)}
+.bmsg{font-size:13px;color:var(--text2);flex:1}
+.banner.on .bmsg{color:var(--green)}
+.banner.warn .bmsg{color:var(--amber)}
+.banner.err .bmsg{color:var(--red)}
+
+/* ── Exercises ── */
+.exs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.exb{padding:6px 16px;border-radius:999px;border:1px solid var(--border);background:var(--bg2s);color:var(--text2);cursor:pointer;font-size:13px;transition:all .15s}
+.exb:hover{border-color:var(--green);color:var(--text)}
+.exb.active{background:var(--green);border-color:var(--green);color:#000;font-weight:600}
+
+/* ── Feedback bar ── */
+.fbbar{padding:11px 16px;border-radius:var(--rs);margin-bottom:16px;font-size:14px;font-weight:500;border-left:3px solid;display:flex;align-items:flex-start;gap:10px;transition:all .3s;line-height:1.45}
+.fbbar.ok{background:var(--gd);border-color:var(--green);color:var(--green)}
+.fbbar.warn{background:var(--ad);border-color:var(--amber);color:var(--amber)}
+.fbbar.error{background:var(--rd);border-color:var(--red);color:var(--red)}
+.fb-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+
+/* ══ Seção superior: câmera + boneco 3D lado a lado, mesma proporção ══ */
+.live-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px}
+.live-panel{background:var(--bg2s);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.live-head{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--border)}
+.live-head .lt{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);font-weight:600}
+.live-badge{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:999px}
+.live-badge.cam{background:rgba(31,204,138,.14);color:var(--green)}
+.live-badge.mirror{background:rgba(74,158,255,.14);color:var(--blue)}
+.live-icon-btn{width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text2);display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;flex-shrink:0}
+.live-icon-btn:hover{border-color:var(--green);color:var(--text)}
+.live-stage{position:relative;aspect-ratio:4/3;background:var(--bg3);overflow:hidden}
+.live-foot{display:flex;justify-content:space-between;padding:8px 14px;font-size:11.5px;color:var(--text2);border-top:1px solid var(--border)}
+.live-foot b{color:var(--text);font-variant-numeric:tabular-nums}
+
+/* Vídeo (mesma marcação/lógica de sempre — só reposicionada) */
+.video-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.video-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text3);font-size:13px;text-align:center;padding:20px}
+.video-badge{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border-radius:999px;padding:3px 10px;font-size:11px;color:var(--text2)}
+.video-badge.live{color:var(--green)}
+.confidence-bar{position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(255,255,255,.1)}
+.confidence-fill{height:100%;background:var(--green);transition:width .3s}
+
+/* Boneco 3D */
+#c3dEmbed{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mirror-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--text3);font-size:13px;text-align:center;padding:20px;pointer-events:none}
+
+/* ══ Seção inferior: controles, métricas + log lateral ══ */
+.lower{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+.lower-main{display:flex;flex-direction:column;gap:16px}
+
+.card{background:var(--bg2s);border:1px solid var(--border);border-radius:var(--r);padding:14px;box-shadow:var(--shadow)}
+.ctitle{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text2);margin-bottom:12px}
+
+/* ── Grid ── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+@media(max-width:980px){.live-row{grid-template-columns:1fr}.lower{grid-template-columns:1fr}}
+@media(max-width:700px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+
+/* ── Metric ── */
+.metric{background:var(--bg3);border-radius:var(--rs);padding:12px}
+.ml{font-size:11px;color:var(--text2);margin-bottom:4px}
+.mv{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.mv.ok{color:var(--green)}.mv.warn{color:var(--amber)}.mv.err{color:var(--red)}
+.ms{font-size:11px;color:var(--text3);margin-top:3px}
+
+/* ── Gauge bars ── */
+.gauge-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.gauge-lbl{font-size:12px;color:var(--text2);width:130px;flex-shrink:0}
+.gauge-track{flex:1;height:6px;background:var(--bg3);border-radius:3px;position:relative;overflow:hidden}
+.gauge-center{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.15)}
+.gauge-fill{position:absolute;height:100%;border-radius:3px;transition:all .3s}
+.gauge-val{font-size:11px;color:var(--text2);width:46px;text-align:right;font-variant-numeric:tabular-nums}
+
+/* ── TTS Log (lateral) ── */
+.log-card{display:flex;flex-direction:column;height:100%}
+.log-card .ctitle{display:flex;justify-content:space-between;align-items:center}
+.ttslog{display:flex;flex-direction:column;max-height:640px;overflow-y:auto}
+.ttsentry{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px}
+.ttsentry:last-child{border-bottom:none}
+.ttime{color:var(--text3);flex-shrink:0;min-width:34px;font-variant-numeric:tabular-nums}
+.tmsg.ok{color:var(--green)}.tmsg.warn{color:var(--amber)}.tmsg.error{color:var(--red)}
+.tmsg{color:var(--text)}
+
+/* ── Tabs (Voz / Sessão) ── */
+.tabs{display:flex;gap:2px;margin-bottom:14px;border-bottom:1px solid var(--border)}
+.tab{padding:7px 16px;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--green);border-bottom-color:var(--green);font-weight:500}
+.tabpanel{display:none}
+.tabpanel.active{display:block}
+
+/* ── Voice panel ── */
+.voice-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.vrow{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.vlbl{font-size:12px;color:var(--text2)}
+.vval{font-size:13px;font-weight:600;color:var(--text);min-width:38px;text-align:right}
+.slider-row{display:flex;align-items:center;gap:10px}
+input[type=range]{flex:1;accent-color:var(--green);height:4px;cursor:pointer}
+select.vsel{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);color:var(--text);padding:7px 10px;font-size:13px;cursor:pointer}
+select.vsel:focus{outline:none;border-color:var(--green)}
+.vtoggle{display:flex;align-items:center;gap:10px}
+.toggle-switch{position:relative;width:40px;height:22px;flex-shrink:0}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--bg3);border-radius:11px;transition:.2s;cursor:pointer;border:1px solid var(--border2)}
+.toggle-slider::before{content:'';position:absolute;width:16px;height:16px;left:2px;top:2px;background:var(--text3);border-radius:50%;transition:.2s}
+.toggle-switch input:checked + .toggle-slider{background:var(--green);border-color:var(--green)}
+.toggle-switch input:checked + .toggle-slider::before{transform:translateX(18px);background:#fff}
+.vbtn{padding:7px 14px;border-radius:var(--rs);border:1px solid var(--border2);background:var(--bg3);color:var(--text2);font-size:13px;cursor:pointer;transition:all .15s}
+.vbtn:hover{border-color:var(--green);color:var(--text)}
+.vbtn.primary{background:var(--green);border-color:var(--green);color:#000;font-weight:600}
+
+/* ── Session metrics ── */
+.sess-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+
+/* ── Modal ── */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:var(--bg2s);border:1px solid var(--border2);border-radius:var(--r);padding:22px;max-width:440px;width:92%;max-height:90vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:600;margin-bottom:8px}
+.modal p{font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.55}
+.modal-btns{display:flex;flex-direction:column;gap:8px}
+.mbtn{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:var(--rs);border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-size:13px;cursor:pointer;transition:all .15s;text-align:left;width:100%}
+.mbtn:hover{border-color:var(--green);background:var(--gd)}
+.micon{font-size:18px;width:24px;text-align:center}
+.mdesc{font-size:11px;color:var(--text2);margin-top:2px}
+.mfoot{display:flex;justify-content:flex-end;margin-top:14px;gap:8px}
+.mcancel{padding:6px 16px;border-radius:var(--rs);border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:13px}
+.steps{list-style:none;display:flex;flex-direction:column;gap:10px;margin-bottom:16px}
+.steps li{display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--text2)}
+.snum{width:22px;height:22px;border-radius:50%;background:var(--bg4);color:var(--green);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+code{background:var(--bg3);padding:2px 7px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">🦴</div>
+  <div class="logo-txt">
+    <h1>SeeMove</h1>
+    <p>Kinect + MediaPipe — monitoramento postural</p>
+  </div>
+  <div class="hright">
+    <div class="pill"><div class="dot" id="connDot"></div><span id="connText">Conectando...</span></div>
+    <button class="hbtn primary" onclick="openModal('reportModal')">📄 Relatório</button>
+  </div>
+</header>
+
+<!-- Tracker banner -->
+<div class="banner" id="trackerBanner">
+  <span id="trackerIcon">📡</span>
+  <span class="bmsg" id="trackerMsg">Câmera não conectada. Clique no ⚙ do painel de câmera para iniciar.</span>
+  <button class="hbtn danger" id="btnDisconn" style="display:none" onclick="disconnectTracker()">Desconectar</button>
+</div>
+
+<!-- Exercises + controles -->
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+  <div class="exs" style="margin-bottom:0;flex:1">
+    <button class="exb active" data-ex="squat"   onclick="setEx(this)">🦵 Agachamento</button>
+    <button class="exb"        data-ex="stand"   onclick="setEx(this)">🧍 Postura estática</button>
+    <button class="exb"        data-ex="balance" onclick="setEx(this)">⚖ Equilíbrio unipodial</button>
+  </div>
+  <button class="hbtn" id="btnSetup" onclick="startSetup()" title="Verifica se você está de corpo inteiro no enquadramento da câmera, com orientação por voz">
+    🎯 Iniciar configuração
+  </button>
+  <button class="hbtn primary" id="btnStart" onclick="startExercise()" title="Anuncia o exercício por voz e inicia o monitoramento">
+    ▶ Iniciar
+  </button>
+  <button class="hbtn" id="btnPause" onclick="pauseOrResume()" title="Pausa a análise e o áudio imediatamente" disabled>
+    ⏸ Pausar
+  </button>
+  <button class="hbtn danger" id="btnStop" onclick="stopExercise()" title="Para e silencia tudo" disabled>
+    ⏹ Parar
+  </button>
+</div>
+
+<!-- Feedback bar -->
+<div class="fbbar ok" id="fb">
+  <span class="fb-icon" id="fbIcon">✔</span>
+  <span id="fbText">Aguardando dados do Kinect...</span>
+</div>
+
+<!-- ══════════════════ Seção superior: Câmera | Boneco 3D ══════════════════ -->
+<div class="live-row">
+
+  <div class="live-panel">
+    <div class="live-head">
+      <span class="lt">📷 Câmera ao vivo</span>
+      <span class="live-badge cam" id="videoBadge" style="display:none">● AO VIVO</span>
+      <button class="live-icon-btn" onclick="openModal('camModal')" title="Configurar câmera (índice, profundidade, conectar/desconectar)">⚙</button>
+    </div>
+    <div class="live-stage" id="videoWrap">
+      <img id="videoImg" class="video-img" style="display:none" alt="feed do kinect">
+      <div class="video-overlay" id="videoOverlay">
+        <span style="font-size:32px">📷</span>
+        <span>Câmera não conectada</span>
+        <button class="hbtn primary" onclick="openModal('camModal')" style="margin-top:8px">Conectar câmera</button>
+      </div>
+      <div class="confidence-bar"><div class="confidence-fill" id="confFill" style="width:0%"></div></div>
+    </div>
+    <div class="live-foot">
+      <span>Confiança: <b id="confVal">—</b></span>
+      <span>Frames: <b id="frameCount">0</b></span>
+      <span id="detStatus" style="color:var(--text3)">sem detecção</span>
+    </div>
+  </div>
+
+  <div class="live-panel">
+    <div class="live-head">
+      <span class="lt">🧍 Boneco 3D</span>
+      <span class="live-badge mirror">⇄ ESPELHADO</span>
+      <button class="live-icon-btn" onclick="resetPose()" title="Reseta a posição do boneco e força uma nova leitura (use se ele travou numa pose errada)">🔄</button>
+    </div>
+    <div class="live-stage">
+      <canvas id="c3dEmbed"></canvas>
+      <div class="mirror-overlay" id="c3dOverlay">
+        <span style="font-size:32px">🧍</span>
+        <span>Aguardando esqueleto detectado...</span>
+      </div>
+    </div>
+    <div class="live-foot">
+      <span>Reflexo: <b>espelhado</b> — sua direita = direita na tela</span>
+      <span id="c3dStatus" style="color:var(--text3)">sem detecção</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════ Seção inferior: controles/métricas + log ══════════════════ -->
+<div class="lower">
+
+  <div class="lower-main">
+
+    <div class="card">
+      <div class="ctitle">Desvios posturais (ao vivo)</div>
+      <div class="gauge-row">
+        <span class="gauge-lbl">Ombros</span>
+        <div class="gauge-track"><div class="gauge-center"></div><div class="gauge-fill" id="gSh" style="left:50%;width:0;background:var(--green)"></div></div>
+        <span class="gauge-val" id="gShV">0.0°</span>
+      </div>
+      <div class="gauge-row">
+        <span class="gauge-lbl">Quadril</span>
+        <div class="gauge-track"><div class="gauge-center"></div><div class="gauge-fill" id="gHp" style="left:50%;width:0;background:var(--green)"></div></div>
+        <span class="gauge-val" id="gHpV">0.0°</span>
+      </div>
+      <div class="gauge-row">
+        <span class="gauge-lbl">Tronco lateral</span>
+        <div class="gauge-track"><div class="gauge-center"></div><div class="gauge-fill" id="gTr" style="left:50%;width:0;background:var(--green)"></div></div>
+        <span class="gauge-val" id="gTrV">0.0°</span>
+      </div>
+      <div class="gauge-row">
+        <span class="gauge-lbl">Joelho esq. (valgo)</span>
+        <div class="gauge-track"><div class="gauge-center"></div><div class="gauge-fill" id="gVL" style="left:50%;width:0;background:var(--green)"></div></div>
+        <span class="gauge-val" id="gVLV">0.0</span>
+      </div>
+      <div class="gauge-row">
+        <span class="gauge-lbl">Joelho dir. (valgo)</span>
+        <div class="gauge-track"><div class="gauge-center"></div><div class="gauge-fill" id="gVR" style="left:50%;width:0;background:var(--green)"></div></div>
+        <span class="gauge-val" id="gVRV">0.0</span>
+      </div>
+      <div class="gauge-row">
+        <span class="gauge-lbl">Verticalidade tronco</span>
+        <div class="gauge-track"><div class="gauge-center"></div><div class="gauge-fill" id="gVt" style="left:50%;width:0;background:var(--green)"></div></div>
+        <span class="gauge-val" id="gVtV">0.0°</span>
+      </div>
+
+      <!-- Ângulos de joelho -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">
+        <div class="metric">
+          <div class="ml">Ângulo joelho esq.</div>
+          <div class="mv ok" id="mKneeL">180°</div>
+          <div class="ms">180° = alinhado</div>
+        </div>
+        <div class="metric">
+          <div class="ml">Ângulo joelho dir.</div>
+          <div class="mv ok" id="mKneeR">180°</div>
+          <div class="ms">180° = alinhado</div>
+        </div>
+      </div>
+
+      <!-- Profundidade Kinect -->
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:10px">
+        <div class="metric" style="flex:1;padding:10px">
+          <div class="ml">Depth joelho esq.</div>
+          <div class="mv" id="mDepthL" style="font-size:16px;color:var(--purple)">—</div>
+          <div class="ms">m (Kinect IR)</div>
+        </div>
+        <div class="metric" style="flex:1;padding:10px">
+          <div class="ml">Depth joelho dir.</div>
+          <div class="mv" id="mDepthR" style="font-size:16px;color:var(--purple)">—</div>
+          <div class="ms">m (Kinect IR)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs: Configuração / Sessão -->
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('voice',this)">⚙ Configuração</div>
+      <div class="tab"        onclick="switchTab('session',this)">📋 Sessão</div>
+    </div>
+
+    <!-- ══ TAB: CONFIGURAÇÃO (calibração de enquadramento + voz) ══ -->
+    <div class="tabpanel active" id="panel-voice">
+      <div class="card" style="margin-bottom:14px">
+        <div class="ctitle">🎯 Calibração de enquadramento</div>
+        <p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">
+          Antes de iniciar qualquer exercício, o SeeMove confirma sozinho que você está de corpo
+          inteiro visível pela câmera, orientando por voz até o enquadramento ficar correto.
+          Isso já acontece automaticamente na primeira vez que você clicar em "Iniciar" — use o botão
+          abaixo se quiser recalibrar manualmente (por exemplo, se você mudou de lugar).
+        </p>
+        <button class="vbtn primary" onclick="startSetup()">🎯 Iniciar configuração</button>
+      </div>
+      <div class="voice-grid">
+        <div class="card">
+          <div class="ctitle">Configurações de voz</div>
+
+          <div class="vrow">
+            <div class="vtoggle">
+              <label class="toggle-switch">
+                <input type="checkbox" id="voiceEnabled" checked onchange="saveVoice()">
+                <div class="toggle-slider"></div>
+              </label>
+              <span style="font-size:13px;color:var(--text)">Voz ativada</span>
+            </div>
+          </div>
+
+          <div class="vrow">
+            <div class="vlbl">Velocidade da fala</div>
+            <div class="slider-row">
+              <input type="range" id="voiceRate" min="50" max="300" value="145" oninput="updateRateVal(this)" onchange="saveVoice()">
+              <span class="vval" id="voiceRateVal">145</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:2px">
+              <span>Devagar</span><span>Normal</span><span>Rápido</span>
+            </div>
+          </div>
+
+          <div class="vrow">
+            <div class="vlbl">Volume</div>
+            <div class="slider-row">
+              <input type="range" id="voiceVolume" min="0" max="100" value="100" oninput="updateVolVal(this)" onchange="saveVoice()">
+              <span class="vval" id="voiceVolVal">100%</span>
+            </div>
+          </div>
+
+          <div class="vrow">
+            <div class="vlbl">Voz do sistema</div>
+            <select class="vsel" id="voiceSelect" onchange="saveVoice()">
+              <option value="">Carregando vozes...</option>
+            </select>
+            <div id="voiceHint" style="font-size:11px;color:var(--text3);margin-top:4px;display:none">
+              Só há 1 voz instalada no sistema. Mais vozes em pt-BR podem ser
+              adicionadas em Configurações → Hora e idioma → Voz (Windows) —
+              o dashboard detecta automaticamente novas vozes ao recarregar.
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="vbtn primary" onclick="testVoice()">▶ Testar voz</button>
+            <button class="vbtn" onclick="resetVoice()">↺ Padrões</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="ctitle">Comportamento do feedback</div>
+
+          <div class="vrow">
+            <div class="vlbl">Silêncio após correção (seg)</div>
+            <div class="slider-row">
+              <input type="range" id="cooldownOk" min="2" max="10" value="4" oninput="document.getElementById('cooldownOkVal').textContent=this.value+'s'" onchange="saveVoice()">
+              <span class="vval" id="cooldownOkVal">4s</span>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">Tempo sem falar quando postura está OK</div>
+          </div>
+
+          <div class="vrow">
+            <div class="vlbl">Intervalo entre correções (seg)</div>
+            <div class="slider-row">
+              <input type="range" id="cooldownWarn" min="2" max="8" value="3" oninput="document.getElementById('cooldownWarnVal').textContent=this.value+'s'" onchange="saveVoice()">
+              <span class="vval" id="cooldownWarnVal">3s</span>
+            </div>
+          </div>
+
+          <div class="vrow">
+            <div class="vlbl">Intervalo em situação crítica (seg)</div>
+            <div class="slider-row">
+              <input type="range" id="cooldownErr" min="1" max="4" value="2" step="0.5" oninput="document.getElementById('cooldownErrVal').textContent=this.value+'s'" onchange="saveVoice()">
+              <span class="vval" id="cooldownErrVal">2s</span>
+            </div>
+          </div>
+
+          <div class="vrow">
+            <div class="vtoggle">
+              <label class="toggle-switch">
+                <input type="checkbox" id="confirmCorrection" checked onchange="saveVoice()">
+                <div class="toggle-slider"></div>
+              </label>
+              <span style="font-size:13px;color:var(--text)">Confirmar quando corrigir <span style="color:var(--text3);font-size:11px">("muito bom")</span></span>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;padding:12px;background:var(--bg3);border-radius:var(--rs);font-size:12px;color:var(--text2);line-height:1.6">
+            <b style="color:var(--text)">Dica para deficientes visuais:</b><br>
+            Velocidade entre 130–160 e volume máximo oferecem a melhor compreensão.
+            Ative "Confirmar quando corrigir" para reforço positivo.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: SESSÃO ══ -->
+    <div class="tabpanel" id="panel-session">
+      <div class="g4">
+        <div class="metric"><div class="ml">Duração</div><div class="mv" id="sDur" style="font-size:20px">00:00</div></div>
+        <div class="metric"><div class="ml">Postura correta</div><div class="mv ok" id="sOk">0%</div></div>
+        <div class="metric"><div class="ml">Correções emitidas</div><div class="mv" id="sCorr" style="color:var(--amber)">0</div></div>
+        <div class="metric"><div class="ml">Confiança média</div><div class="mv" id="sConf">—</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Log de feedbacks — mesma marcação/lógica de sempre, só reposicionado -->
+  <div class="card log-card">
+    <div class="ctitle">
+      <span>Log de feedback de áudio</span>
+      <button onclick="clearLog()" style="background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer">limpar</button>
+    </div>
+    <div class="ttslog" id="ttslog">
+      <div class="ttsentry"><span class="ttime">--:--</span><span class="tmsg">Aguardando...</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ MODAL: Câmera ══ -->
+<div class="modal-bg" id="camModal">
+  <div class="modal">
+    <h3>📷 Conectar câmera / Kinect</h3>
+    <p>O Kinect v1 é reconhecido como câmera RGB pelo Windows. Se tiver mais de uma câmera, tente índices diferentes.</p>
+    <ul class="steps">
+      <li><span class="snum">1</span>Conecte o Kinect via USB (alimentação separada necessária no v1).</li>
+      <li><span class="snum">2</span>Escolha o índice da câmera abaixo (normalmente 0 ou 1).</li>
+      <li><span class="snum">3</span>Ative a profundidade se tiver o driver <code>freenect</code> instalado.</li>
+      <li><span class="snum">4</span>Clique em <b style="color:var(--green)">Conectar</b>.</li>
+    </ul>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">
+      <div>
+        <div class="vlbl" style="margin-bottom:6px">Índice da câmera</div>
+        <div style="display:flex;gap:8px">
+          <button class="vbtn" onclick="setCamIdx(0)" id="cam0">0 (padrão)</button>
+          <button class="vbtn" onclick="setCamIdx(1)" id="cam1">1</button>
+          <button class="vbtn" onclick="setCamIdx(2)" id="cam2">2</button>
+        </div>
+        <input type="number" id="camIdxCustom" min="0" max="10" value="0"
+               style="margin-top:8px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);color:var(--text);padding:6px 10px;font-size:13px;width:120px">
+        <span style="font-size:12px;color:var(--text3);margin-left:8px">índice personalizado</span>
+      </div>
+      <div class="vtoggle">
+        <label class="toggle-switch">
+          <input type="checkbox" id="useDepth" checked>
+          <div class="toggle-slider"></div>
+        </label>
+        <span style="font-size:13px;color:var(--text)">Usar profundidade (Kinect IR) <span style="color:var(--text3);font-size:11px">requer freenect</span></span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="mcancel" onclick="closeModal('camModal')">Cancelar</button>
+      <button class="hbtn primary" onclick="connectTracker()">🔍 Conectar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: Relatório ══ -->
+<div class="modal-bg" id="reportModal">
+  <div class="modal">
+    <h3>📄 Gerar Relatório</h3>
+    <p>Exporta os dados da sessão atual com métricas biomecânicas detalhadas.</p>
+    <div class="modal-btns">
+      <button class="mbtn" onclick="downloadReport('html')">
+        <span class="micon">🌐</span>
+        <div><div>Relatório HTML</div><div class="mdesc">Abre no navegador — visualize e imprima</div></div>
+      </button>
+      <button class="mbtn" onclick="downloadReport('csv')">
+        <span class="micon">📊</span>
+        <div><div>Dados CSV</div><div class="mdesc">Todos os frames com métricas para análise</div></div>
+      </button>
+      <button class="mbtn" onclick="downloadReport('json')">
+        <span class="micon">🔧</span>
+        <div><div>JSON técnico</div><div class="mdesc">Resumo da sessão para integração</div></div>
+      </button>
+    </div>
+    <div class="mfoot"><button class="mcancel" onclick="closeModal('reportModal')">Fechar</button></div>
+  </div>
+</div>
+
+<script>
+// ── Constantes ────────────────────────────────────────────────────────────
+let camIdx = 0;
+
+// ── Áudio (Web Speech API + Web Audio API) ──────────────────────────────────
+// Todo o áudio de feedback é reproduzido AQUI, no navegador — zero latência
+// de backend e cancelamento instantâneo (speechSynthesis.cancel() corta a
+// fala em andamento na hora, algo que pyttsx3/sounddevice no backend nunca
+// conseguem garantir). O backend só manda eventos semânticos.
+class AudioClient {
+  constructor() {
+    this.synth = window.speechSynthesis;
+    this.ctx = null;
+    this.voice = null;          // voz efetivamente usada em speak()
+    this._preferredURI = null;  // seleção do usuário (voiceSelect) — pode
+                                 // chegar antes de getVoices() popular
+    this._activeOscs = [];
+    this._loadVoice();
+  }
+  // A troca de voz era ignorada porque o dropdown do dashboard listava as
+  // vozes do pyttsx3 (backend) — IDs que não existem no namespace de
+  // SpeechSynthesisVoice do browser, que é quem realmente fala aqui. Agora
+  // a escolha do usuário é resolvida contra synth.getVoices() (ver
+  // setPreferredVoice()); _loadVoice() só decide o fallback automático
+  // pt-BR usado enquanto nenhuma voz foi escolhida manualmente.
+  //
+  // Não registra o próprio onvoiceschanged aqui — quem é dono desse
+  // listener é loadVoices() (mais abaixo no arquivo), que reconstrói o
+  // <select> e chama setPreferredVoice() a cada disparo. Dois handlers
+  // concorrentes se sobrescrevem silenciosamente (o segundo a atribuir
+  // vence) e o dropdown podia ficar preso com só a opção "Auto" mesmo
+  // com várias vozes instaladas no sistema.
+  _loadVoice() {
+    const voices = this.synth.getVoices();
+    if (this._preferredURI) {
+      const match = voices.find(v => v.voiceURI === this._preferredURI);
+      if (match) { this.voice = match; return; }
+    }
+    this.voice = voices.find(v => v.lang && v.lang.toLowerCase().startsWith("pt-br"))
+              || voices.find(v => v.lang && v.lang.toLowerCase().startsWith("pt"))
+              || null;
+  }
+  // Chamado pelo seletor "Voz do sistema" — reaplica na hora se a lista de
+  // vozes já carregou, ou fica pendente até onvoiceschanged (Chrome carrega
+  // vozes de forma assíncrona) resolvê-la em _loadVoice().
+  setPreferredVoice(voiceURI) {
+    this._preferredURI = voiceURI || null;
+    this._loadVoice();
+  }
+  speak(text, {rate=1, volume=1, cancel=true} = {}) {
+    if (!text || !this.synth) return;
+    if (cancel) this.synth.cancel();   // interrompe qualquer fala anterior na hora
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "pt-BR";
+    if (this.voice) u.voice = this.voice;
+    u.rate   = Math.max(0.5, Math.min(2.5, rate || 1));
+    u.volume = Math.max(0, Math.min(1, volume == null ? 1 : volume));
+    this.synth.speak(u);
+  }
+  _ensureCtx() {
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = AC ? new AC() : null;
+    }
+    if (this.ctx && this.ctx.state === "suspended") this.ctx.resume();
+    return this.ctx;
+  }
+  _tone(freq, pan, dur, gain) {
+    const ctx = this._ensureCtx();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const g   = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    const now = ctx.currentTime;
+    g.gain.setValueAtTime(0, now);
+    g.gain.linearRampToValueAtTime(gain, now + 0.01);
+    g.gain.linearRampToValueAtTime(0, now + dur);
+    osc.connect(g);
+    if (ctx.createStereoPanner) {
+      const p = ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, pan || 0));
+      g.connect(p); p.connect(ctx.destination);
+    } else {
+      g.connect(ctx.destination);
+    }
+    osc.start(now);
+    osc.stop(now + dur + 0.02);
+    this._activeOscs.push(osc);
+    osc.onended = () => { this._activeOscs = this._activeOscs.filter(o => o !== osc); };
+  }
+  cue(severity, pan=0) {
+    const freqs = {ok:587, warn:349, error:261};
+    const durs  = {ok:0.12, warn:0.16, error:0.22};
+    this._tone(freqs[severity] || 349, pan, durs[severity] || 0.16, 0.3);
+  }
+  ambient(x=0, y=0) {
+    const freq = Math.max(250, Math.min(750, 440 + (y || 0) * 100));
+    this._tone(freq, Math.max(-1, Math.min(1, (x || 0) * 1.2)), 0.15, 0.12);
+  }
+  chime(pattern="success") {
+    // Sinal sonoro curto de comunicação de estado (ex.: calibração de
+    // enquadramento concluída) — mesmo espírito de cue()/ambient(), só que
+    // dois tons em sequência em vez de um só.
+    const seqs = {
+      success: [[587,0.12],[880,0.22]],
+      warning: [[220,0.40]],
+    };
+    const seq = seqs[pattern] || seqs.success;
+    let delayMs = 0;
+    for (const [freq, dur] of seq) {
+      setTimeout(() => this._tone(freq, 0, dur, 0.35), delayMs);
+      delayMs += (dur + 0.05) * 1000;
+    }
+  }
+  stopAll() {
+    if (this.synth) this.synth.cancel();
+    this._activeOscs.forEach(o => { try { o.stop(); } catch (e) {} });
+    this._activeOscs = [];
+  }
+}
+const audioClient = new AudioClient();
+// Um gesto de clique "desbloqueia" o AudioContext em navegadores que exigem
+// interação do usuário antes de tocar áudio — o botão Iniciar já serve pra isso.
+document.addEventListener("click", () => audioClient._ensureCtx(), {once:true});
+
+// ── Socket.IO ─────────────────────────────────────────────────────────────
+const socket = io();
+
+socket.on("connect",    () => { setPill(true); socket.emit("request_image"); });
+socket.on("disconnect", () => setPill(false));
+socket.on("frame",      d  => updateFrame(d));
+socket.on("frame_image",e  => updateImage(e.img));
+socket.on("tts_log",    e  => addLog(e));
+socket.on("audio_speak",   e => audioClient.speak(e.text, e));
+socket.on("audio_cue",     e => audioClient.cue(e.severity, e.pan));
+socket.on("audio_ambient", e => audioClient.ambient(e.x, e.y));
+socket.on("audio_stop",    () => audioClient.stopAll());
+socket.on("audio_chime",   e => audioClient.chime(e.pattern));
+socket.on("session_state", e => applySessionStateUI(e.state));
+socket.on("pose_reset",    () => { if (window.reset3DPose) window.reset3DPose(); });
+socket.on("tracker_status",   e => updateBanner(e.msg, e.connected));
+socket.on("exercise_changed", e => {
+  document.querySelectorAll(".exb").forEach(b =>
+    b.classList.toggle("active", b.dataset.ex === e.key));
+});
+socket.on("voice_settings_changed", d => applyVoiceUI(d));
+
+function setPill(ok) {
+  document.getElementById("connDot").className = "dot " + (ok ? "on" : "err");
+  document.getElementById("connText").textContent = ok ? "Servidor conectado" : "Desconectado";
+}
+
+// ── Frame update ──────────────────────────────────────────────────────────
+function gClass(v, w, e) { return Math.abs(v) > e ? "err" : Math.abs(v) > w ? "warn" : "ok"; }
+const sg  = (v, d=1) => (v >= 0 ? "+" : "") + v.toFixed(d);
+const abs = Math.abs;
+
+function updateFrame(d) {
+  // Sincroniza os botões Iniciar/Pausar/Parar com o estado real da sessão
+  // a cada frame (fonte da verdade) — o evento "session_state" pontual só
+  // acelera a resposta visual ao clique, isso aqui corrige qualquer
+  // dessincronia (reload de página, reconexão, race entre clique e socket).
+  if (d.session_state) applySessionStateUI(d.session_state);
+
+  // Feedback bar
+  const fb   = document.getElementById("fb");
+  const icons = {ok:"✔", warn:"⚠", error:"✖"};
+  fb.className = "fbbar " + (d.severity || "ok");
+  document.getElementById("fbIcon").textContent = icons[d.severity] || "✔";
+  document.getElementById("fbText").textContent = d.feedback || "Aguardando...";
+
+  // Confiança + detecção (painel de câmera)
+  const conf = d.confidence || 0;
+  document.getElementById("confVal").textContent = d.detected ? conf.toFixed(0)+"%" : "—";
+  document.getElementById("confFill").style.width = conf + "%";
+  document.getElementById("frameCount").textContent = d.frame_count || 0;
+  const detEl = document.getElementById("detStatus");
+  detEl.textContent = d.detected ? "esqueleto detectado" : "sem detecção";
+  detEl.style.color = d.detected ? "var(--green)" : "var(--text3)";
+
+  // Status do painel 3D (segue a mesma detecção)
+  const c3dStatus = document.getElementById("c3dStatus");
+  c3dStatus.textContent = d.detected ? "esqueleto detectado" : "sem detecção";
+  c3dStatus.style.color = d.detected ? "var(--green)" : "var(--text3)";
+  document.getElementById("c3dOverlay").style.display = d.detected ? "none" : "";
+
+  // Gauges (desvios posturais)
+  setGauge("gSh", "gShV",  d.shoulder_tilt, 15, 3, 6,   "°");
+  setGauge("gHp", "gHpV",  d.hip_tilt,      15, 4, 8,   "°");
+  setGauge("gTr", "gTrV",  d.trunk_lean_x,  15, 5, 10,  "°");
+  setGauge("gVL", "gVLV",  d.knee_valgus_l, 15, 5, 10,  "");
+  setGauge("gVR", "gVRV",  d.knee_valgus_r, 15, 5, 10,  "");
+  setGauge("gVt", "gVtV",  d.torso_vertical,15, 10,18,  "°");
+
+  // Ângulos de joelho
+  setMetric("mKneeL", d.knee_angle_l, d.knee_angle_l+"°", gClass(180-d.knee_angle_l, 30, 70));
+  setMetric("mKneeR", d.knee_angle_r, d.knee_angle_r+"°", gClass(180-d.knee_angle_r, 30, 70));
+
+  // Profundidade
+  const dl = d.depth_l_knee, dr = d.depth_r_knee;
+  document.getElementById("mDepthL").textContent = dl ? abs(dl).toFixed(2)+"m" : "—";
+  document.getElementById("mDepthR").textContent = dr ? abs(dr).toFixed(2)+"m" : "—";
+
+  // Sessão
+  document.getElementById("sDur").textContent  = d.duration_str || "00:00";
+  document.getElementById("sOk").textContent   = (d.ok_pct || 0).toFixed(1)+"%";
+  document.getElementById("sCorr").textContent = d.corrections || 0;
+  document.getElementById("sConf").textContent = conf > 0 ? conf.toFixed(0)+"%" : "—";
+
+  // Boneco 3D — alimenta a engine embutida abaixo
+  if (window.mapSkeleton3D) window.mapSkeleton3D(d);
+}
+
+function updateImage(img) {
+  const el = document.getElementById("videoImg");
+  const ov = document.getElementById("videoOverlay");
+  const bg = document.getElementById("videoBadge");
+  if (img) {
+    el.src = img;
+    el.style.display = "";
+    ov.style.display = "none";
+    bg.style.display = "";
+  }
+}
+
+function setGauge(fillId, valId, val, maxVal, warn, err, unit) {
+  const fill = document.getElementById(fillId);
+  const pct  = Math.min(50, abs(val) / maxVal * 50);
+  const cls  = abs(val) > err ? "var(--red)" : abs(val) > warn ? "var(--amber)" : "var(--green)";
+  if (val >= 0) { fill.style.left = "50%"; fill.style.width = pct+"%"; }
+  else          { fill.style.left = (50-pct)+"%"; fill.style.width = pct+"%"; }
+  fill.style.background = cls;
+  document.getElementById(valId).textContent = sg(val)+unit;
+}
+
+function setMetric(id, val, text, cls) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className   = "mv " + cls;
+}
+
+// ── TTS Log ───────────────────────────────────────────────────────────────
+function addLog(e) {
+  const log = document.getElementById("ttslog");
+  const ph  = log.querySelector(".ttime");
+  if (ph && ph.textContent === "--:--") ph.closest(".ttsentry").remove();
+  const div = document.createElement("div");
+  div.className = "ttsentry";
+  div.innerHTML = `<span class="ttime">${e.time}</span><span class="tmsg ${e.sev}">${e.msg}</span>`;
+  log.prepend(div);
+  const es = log.querySelectorAll(".ttsentry");
+  if (es.length > 20) es[es.length-1].remove();
+}
+function clearLog() {
+  document.getElementById("ttslog").innerHTML =
+    `<div class="ttsentry"><span class="ttime">--:--</span><span class="tmsg">Log limpo.</span></div>`;
+}
+
+// ── Tracker / câmera ──────────────────────────────────────────────────────
+function updateBanner(msg, connected) {
+  const b = document.getElementById("trackerBanner");
+  const m = document.getElementById("trackerMsg");
+  const i = document.getElementById("trackerIcon");
+  const d = document.getElementById("btnDisconn");
+  b.className = "banner" + (connected ? " on" : msg.toLowerCase().includes("err") || msg.toLowerCase().includes("não") ? " err" : " warn");
+  m.textContent = msg;
+  i.textContent = connected ? "✅" : "📡";
+  d.style.display = connected ? "" : "none";
+  document.getElementById("btnDisconn").style.display = connected ? "" : "none";
+}
+
+function setCamIdx(n) {
+  camIdx = n;
+  document.getElementById("camIdxCustom").value = n;
+}
+
+function connectTracker() {
+  closeModal("camModal");
+  const idx   = parseInt(document.getElementById("camIdxCustom").value) || camIdx;
+  const depth = document.getElementById("useDepth").checked;
+  updateBanner("Abrindo câmera (índice "+idx+")...", false);
+  fetch("/api/tracker/connect", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({camera_index: idx, use_depth: depth})
+  });
+}
+
+function resetPose() {
+  // Reset local imediato (não espera o round-trip do socket) + pede ao
+  // backend para descartar o estado acumulado do filtro de suavização,
+  // pra próxima leitura não continuar arrastando o viés de uma leitura
+  // inicial ruim.
+  if (window.reset3DPose) window.reset3DPose();
+  fetch("/api/tracker/reset_pose", {method:"POST"});
+}
+
+function disconnectTracker() {
+  fetch("/api/tracker/disconnect", {method:"POST"}).then(() =>
+    updateBanner("Câmera desconectada.", false));
+  document.getElementById("videoImg").style.display = "none";
+  document.getElementById("videoOverlay").style.display = "";
+  document.getElementById("videoBadge").style.display = "none";
+}
+
+// ── Exercício ─────────────────────────────────────────────────────────────
+let _currentEx = "squat";
+
+function setEx(btn) {
+  document.querySelectorAll(".exb").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  _currentEx = btn.dataset.ex;
+  // Só seleciona — não fala ainda
+  fetch("/api/exercise/"+_currentEx, {method:"POST"});
+}
+
+function startExercise() {
+  // Anuncia por voz e inicia o monitoramento — único jeito de sair do
+  // estado mudo (STOPPED). Antes disso, análise e áudio ficam desligados.
+  fetch("/api/exercise/"+_currentEx+"/start", {method:"POST"})
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        const btn = document.getElementById("btnStart");
+        btn.textContent = "▶ Iniciado";
+        setTimeout(() => { btn.textContent = "▶ Iniciar"; }, 2000);
+        applySessionStateUI("running");
+      }
+    });
+}
+
+let _paused = false;
+
+function pauseOrResume() {
+  // Captura a intenção AGORA — não reler _paused depois do fetch resolver:
+  // o evento "session_state" do socket pode chegar entre o clique e a
+  // resposta HTTP e já ter mutado _paused, fazendo o callback usar o
+  // valor errado (o servidor manda o mesmo evento de qualquer forma, mas
+  // sem isso a UI podia "piscar" para o estado oposto por uma race).
+  const goingToPause = !_paused;
+  const url = goingToPause ? "/api/exercise/pause" : "/api/exercise/resume";
+  fetch(url, {method:"POST"}).then(r => r.json()).then(d => {
+    if (d.ok) applySessionStateUI(goingToPause ? "paused" : "resumed");
+  });
+}
+
+function stopExercise() {
+  fetch("/api/exercise/stop", {method:"POST"}).then(r => r.json()).then(d => {
+    if (d.ok) applySessionStateUI("stopped");
+  });
+}
+
+function startSetup() {
+  // Modo Configuração: calibra o enquadramento de corpo inteiro com
+  // orientação por voz antes de liberar qualquer exercício. Clicar em
+  // "Iniciar <exercício>" sem calibrar ainda já dispara isso sozinho — este
+  // botão é só o caminho manual (ex.: recalibrar depois de mudar de lugar).
+  fetch("/api/setup/start", {method:"POST"}).then(r => r.json()).then(d => {
+    if (d.ok) applySessionStateUI("setup");
+  });
+}
+
+function applySessionStateUI(state) {
+  const btnSetup = document.getElementById("btnSetup");
+  const btnStart = document.getElementById("btnStart");
+  const btnPause = document.getElementById("btnPause");
+  const btnStop  = document.getElementById("btnStop");
+  // "Iniciar configuração" fica disponível em qualquer estado — dá pra
+  // recalibrar manualmente a qualquer momento (ex.: mudou de lugar no meio
+  // de um exercício) — só não faz sentido clicar de novo enquanto já está
+  // calibrando.
+  btnSetup.disabled = (state === "setup");
+  if (state === "stopped") {
+    _paused = false;
+    btnStart.disabled = false;
+    btnPause.disabled = true;  btnPause.textContent = "⏸ Pausar";
+    btnStop.disabled  = true;
+  } else if (state === "setup") {
+    _paused = false;
+    btnStart.disabled = true;
+    btnPause.disabled = true;  btnPause.textContent = "⏸ Pausar";
+    btnStop.disabled  = false;  // dá pra cancelar a calibração a qualquer momento
+  } else if (state === "paused") {
+    _paused = true;
+    btnStart.disabled = true;
+    btnPause.disabled = false; btnPause.textContent = "▶ Retomar";
+    btnStop.disabled  = false;
+  } else { // running / resumed
+    _paused = false;
+    btnStart.disabled = true;
+    btnPause.disabled = false; btnPause.textContent = "⏸ Pausar";
+    btnStop.disabled  = false;
+  }
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+function switchTab(name, el) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".tabpanel").forEach(p => p.classList.remove("active"));
+  el.classList.add("active");
+  document.getElementById("panel-"+name).classList.add("active");
+}
+
+// ── Modals ────────────────────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add("open"); }
+function closeModal(id) { document.getElementById(id).classList.remove("open"); }
+document.querySelectorAll(".modal-bg").forEach(bg =>
+  bg.addEventListener("click", e => { if (e.target===bg) bg.classList.remove("open"); }));
+
+// ── Relatórios ────────────────────────────────────────────────────────────
+function downloadReport(fmt) {
+  closeModal("reportModal");
+  if (fmt==="html") window.open("/api/report/html","_blank");
+  else { const a=document.createElement("a"); a.href="/api/report/"+fmt; a.download=""; a.click(); }
+}
+
+// ── Voz ───────────────────────────────────────────────────────────────────
+function updateRateVal(el) { document.getElementById("voiceRateVal").textContent = el.value; }
+function updateVolVal(el)  { document.getElementById("voiceVolVal").textContent  = el.value+"%"; }
+
+function saveVoice() {
+  const voiceURI = document.getElementById("voiceSelect").value || null;
+  const payload = {
+    enabled:               document.getElementById("voiceEnabled").checked,
+    rate:                  parseInt(document.getElementById("voiceRate").value),
+    volume:                parseInt(document.getElementById("voiceVolume").value) / 100,
+    // voice_id aqui é só o rótulo persistido no backend (usado pelo motor
+    // local no modo --no-web); quem toca de fato é o browser via
+    // AudioClient — a linha abaixo é o que realmente troca a voz ouvida.
+    voice_id:              voiceURI,
+    cooldown_ok_s:         parseFloat(document.getElementById("cooldownOk").value),
+    cooldown_warn_s:       parseFloat(document.getElementById("cooldownWarn").value),
+    cooldown_error_s:      parseFloat(document.getElementById("cooldownErr").value),
+    confirm_on_correction: document.getElementById("confirmCorrection").checked,
+  };
+  audioClient.setPreferredVoice(voiceURI);
+  try { localStorage.setItem("seemove_voice_uri", voiceURI || ""); } catch (e) {}
+  fetch("/api/voice/settings", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+}
+
+function testVoice() {
+  fetch("/api/voice/test", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({message: "Olá, este é o feedback de voz do SeeMove."})
+  });
+}
+
+function resetVoice() {
+  document.getElementById("voiceRate").value   = 145;
+  document.getElementById("voiceVolume").value = 100;
+  document.getElementById("voiceRateVal").textContent = "145";
+  document.getElementById("voiceVolVal").textContent  = "100%";
+  document.getElementById("voiceEnabled").checked     = true;
+  document.getElementById("confirmCorrection").checked = true;
+  saveVoice();
+}
+
+function applyVoiceUI(d) {
+  if (d.enabled !== undefined) document.getElementById("voiceEnabled").checked = d.enabled;
+  if (d.rate    !== undefined) { document.getElementById("voiceRate").value = d.rate; document.getElementById("voiceRateVal").textContent = d.rate; }
+  if (d.volume  !== undefined) { const v=Math.round(d.volume*100); document.getElementById("voiceVolume").value=v; document.getElementById("voiceVolVal").textContent=v+"%"; }
+}
+
+// Popula com as vozes do PRÓPRIO NAVEGADOR (speechSynthesis.getVoices()),
+// não as do backend (/api/voice/voices, pyttsx3) — o áudio no dashboard
+// toca aqui no browser via Web Speech API, e o namespace de voice IDs do
+// pyttsx3 não tem nenhuma correspondência com o do browser. Era por isso
+// que trocar a voz no dropdown nunca surtia efeito real.
+//
+// getVoices() é notoriamente instável no primeiro acesso: em alguns
+// Chrome/Edge no Windows ela devolve [] e o evento onvoiceschanged nunca
+// dispara (em vez de disparar uma vez, como no Chrome no Linux/Mac).
+// Por isso, além do listener, faz um retry por polling curto — cobre os
+// dois comportamentos sem depender de qual navegador o usuário tem.
+let _voiceLoadAttempts = 0;
+function loadVoices() {
+  const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+
+  if (!voices.length && _voiceLoadAttempts < 10) {
+    _voiceLoadAttempts++;
+    setTimeout(loadVoices, 300);
+    return;
+  }
+  if (window.speechSynthesis && window.speechSynthesis.onvoiceschanged !== undefined) {
+    window.speechSynthesis.onvoiceschanged = () => loadVoices();
+  }
+
+  const el = document.getElementById("voiceSelect");
+  const current = el.value;
+  el.innerHTML = '<option value="">Auto (pt-BR)</option>';
+
+  const seen = new Set();
+  voices
+    .filter(v => v.lang && v.lang.toLowerCase().startsWith("pt"))
+    .concat(voices.filter(v => !(v.lang && v.lang.toLowerCase().startsWith("pt"))))
+    .forEach(v => {
+      if (seen.has(v.voiceURI)) return;   // alguns navegadores duplicam a lista por engine (local+remoto)
+      seen.add(v.voiceURI);
+      const opt = document.createElement("option");
+      opt.value = v.voiceURI;
+      opt.textContent = `${v.name} (${v.lang})`;
+      el.appendChild(opt);
+    });
+
+  const hint = document.getElementById("voiceHint");
+  if (hint) hint.style.display = seen.size <= 1 ? "block" : "none";
+
+  let saved = current;
+  if (!saved) {
+    try { saved = localStorage.getItem("seemove_voice_uri") || ""; } catch (e) { saved = ""; }
+  }
+  if (saved && [...el.options].some(o => o.value === saved)) el.value = saved;
+  audioClient.setPreferredVoice(el.value || null);
+}
+
+function loadVoiceSettings() {
+  fetch("/api/voice/settings").then(r=>r.json()).then(d => {
+    if (!d.enabled === undefined) return;
+    document.getElementById("voiceEnabled").checked = d.enabled;
+    document.getElementById("voiceRate").value = d.rate;
+    document.getElementById("voiceRateVal").textContent = d.rate;
+    const vol = Math.round(d.volume*100);
+    document.getElementById("voiceVolume").value = vol;
+    document.getElementById("voiceVolVal").textContent = vol+"%";
+    if (d.cooldown_ok_s)   document.getElementById("cooldownOk").value = d.cooldown_ok_s;
+    if (d.cooldown_warn_s) document.getElementById("cooldownWarn").value = d.cooldown_warn_s;
+    if (d.cooldown_error_s)document.getElementById("cooldownErr").value = d.cooldown_error_s;
+    if (d.confirm_on_correction !== undefined)
+      document.getElementById("confirmCorrection").checked = d.confirm_on_correction;
+  }).catch(()=>{});
+}
+
+loadVoices();
+loadVoiceSettings();
+
+// ══════════════════════════════════════════════════════════════════════════
+// Boneco 3D embutido — mesma engine de bone-mapping por quaternion/Slerp de
+// figure3d.html, adaptada para o painel menor do novo layout, e com o
+// espelhamento corrigido: MediaPipe entrega x anatomicamente correto (ex.:
+// "left_shoulder" é sempre o ombro esquerdo real da pessoa, mesmo com o
+// frame já invertido no backend para exibição em modo selfie), mas ao usar
+// esse x diretamente no Three.js o boneco "olhava" o usuário de costas —
+// espelhamos x = 1 - x_original ao ingerir os landmarks, assim o lado
+// direito do usuário sempre aparece do lado direito da tela, como um
+// espelho de verdade.
+// ══════════════════════════════════════════════════════════════════════════
+(function initEmbedded3D(){
+  if (typeof THREE === "undefined") return;
+  const canvas = document.getElementById("c3dEmbed");
+  if (!canvas) return;
+
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:false});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1e2e);
+  scene.fog = new THREE.FogExp2(0x1a1e2e, 0.05);
+
+  // Câmera ajustada para acompanhar o enquadramento padrão de uma webcam
+  // (pessoa centralizada, corpo inteiro visível, pouco recuo de zoom).
+  const camera = new THREE.PerspectiveCamera(42, 4/3, 0.1, 100);
+  let az = 0, el2 = .12, rad = 3.9;
+  const camTarget = new THREE.Vector3(0, 1.05, 0);
+
+  scene.add(new THREE.AmbientLight(0x8090b0, 0.5));
+  const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
+  keyLight.position.set(3,6,4); keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(1024,1024);
+  scene.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(0x1fcc8a, 0.3);
+  rimLight.position.set(-3,2.5,-3); scene.add(rimLight);
+
+  const floorMat = new THREE.MeshStandardMaterial({color:0x131622, roughness:.9});
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(2.6, 40), floorMat);
+  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true;
+  scene.add(floor);
+
+  const M = {
+    body:  new THREE.MeshStandardMaterial({color:0x3d7fd6, roughness:.35, metalness:.15}),
+    head:  new THREE.MeshStandardMaterial({color:0x5aa3f0, roughness:.35, metalness:.1}),
+    joint: new THREE.MeshStandardMaterial({color:0x1fcc8a, roughness:.25, metalness:.25, emissive:0x0c4d34, emissiveIntensity:.4}),
+    limb:  new THREE.MeshStandardMaterial({color:0x2e6bb8, roughness:.4, metalness:.1}),
+    warn:  new THREE.MeshStandardMaterial({color:0xf5a623, roughness:.25, emissive:0xf5a623, emissiveIntensity:.35}),
+  };
+  function cyl(rt,rb,h,mat){ const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,12),mat); m.castShadow=true; return m; }
+  function sph(r,mat){ const m=new THREE.Mesh(new THREE.SphereGeometry(r,12,12),mat); m.castShadow=true; return m; }
+
+  const root = new THREE.Group(); root.position.set(0,1.0,0); scene.add(root);
+  const lHipJ = sph(.07,M.joint); lHipJ.position.set(-.11,0,0); root.add(lHipJ);
+  const rHipJ = sph(.07,M.joint); rHipJ.position.set(.11,0,0);  root.add(rHipJ);
+
+  const torsoPivot = new THREE.Group(); root.add(torsoPivot);
+  const torso = cyl(.14,.16,.42,M.body); torso.position.y=.21; torsoPivot.add(torso);
+
+  const shoulderPivot = new THREE.Group(); shoulderPivot.position.y=.42; torsoPivot.add(shoulderPivot);
+  const neck = cyl(.05,.07,.12,M.body); neck.position.y=.06; shoulderPivot.add(neck);
+  const head = sph(.14,M.head); head.position.y=.24; shoulderPivot.add(head);
+  const lShJ = sph(.06,M.joint); lShJ.position.set(-.22,.02,0); shoulderPivot.add(lShJ);
+  const rShJ = sph(.06,M.joint); rShJ.position.set(.22,.02,0);  shoulderPivot.add(rShJ);
+
+  function makeArm(side){
+    const ua = new THREE.Group(); ua.position.set(side*.22,.02,0); shoulderPivot.add(ua);
+    const uaM = cyl(.045,.055,.26,M.limb); uaM.position.y=-.13; ua.add(uaM);
+    const ej  = sph(.045,M.joint); ej.position.y=-.26; ua.add(ej);
+    const fa  = new THREE.Group(); fa.position.y=-.26; ua.add(fa);
+    const faM = cyl(.035,.045,.22,M.limb); faM.position.y=-.11; fa.add(faM);
+    return {ua, fa};
+  }
+  const {ua:lUA, fa:lFA} = makeArm(-1);
+  const {ua:rUA, fa:rFA} = makeArm(1);
+
+  function makeLeg(side){
+    const ul = new THREE.Group(); ul.position.set(side*.11,0,0); root.add(ul);
+    const ulM = cyl(.065,.075,.40,M.body); ulM.position.y=-.20; ul.add(ulM);
+    const kj  = sph(.06,M.joint); kj.position.y=-.40; ul.add(kj);
+    const ll  = new THREE.Group(); ll.position.y=-.40; ul.add(ll);
+    const llM = cyl(.05,.06,.36,M.limb); llM.position.y=-.18; ll.add(llM);
+    const ft  = cyl(.04,.06,.14,M.limb); ft.rotation.x=-Math.PI/3; ft.position.set(0,-.36,.06); ll.add(ft);
+    return {ul, ll, kj};
+  }
+  const {ul:lUL, ll:lLL, kj:lKJ} = makeLeg(-1);
+  const {ul:rUL, ll:rLL, kj:rKJ} = makeLeg(1);
+
+  // Direção de repouso de cada osso — o eixo local que a malha do osso
+  // ocupa quando o grupo-pai está sem rotação (identidade). Braços e
+  // pernas usam meshes deslocadas em -Y (apontam pra baixo do pivô), mas
+  // o torso é deslocado em +Y (torso.position.y = .21 — aponta pra CIMA
+  // do quadril). Usar o mesmo REST_DIR=(0,-1,0) pra coluna fazia o
+  // quaternion calcular uma rotação de 180° sempre que a pessoa ficava em
+  // pé (quadril→ombro aponta pra +Y), virando o tronco de cabeça pra baixo.
+  const REST_DIR_DOWN = new THREE.Vector3(0,-1,0);
+  const REST_DIR_UP   = new THREE.Vector3(0,1,0);
+  const SLERP = 0.18;
+  const _dir = new THREE.Vector3();
+  const _worldQuat = new THREE.Quaternion();
+  const _parentWorldQuat = new THREE.Quaternion();
+
+  const bones = [];
+  function registerBone(group, parent, restDir) {
+    const entry = {group, parent, restDir: restDir || REST_DIR_DOWN, target: new THREE.Quaternion(), hasTarget:false};
+    bones.push(entry);
+    return entry;
+  }
+  const boneUpperArmL = registerBone(lUA, shoulderPivot);
+  const boneForearmL  = registerBone(lFA, lUA);
+  const boneUpperArmR = registerBone(rUA, shoulderPivot);
+  const boneForearmR  = registerBone(rFA, rUA);
+  const boneUpperLegL = registerBone(lUL, root);
+  const boneLowerLegL = registerBone(lLL, lUL);
+  const boneUpperLegR = registerBone(rUL, root);
+  const boneLowerLegR = registerBone(rLL, rUL);
+  const boneSpine     = registerBone(torsoPivot, root, REST_DIR_UP);
+
+  // Sem Kinect (só webcam), o Z de cada landmark é uma ESTIMATIVA
+  // monocular do próprio MediaPipe — a rede infere profundidade a partir
+  // de pistas de perspectiva de uma imagem só, sem nenhum sensor real por
+  // trás. Isso não é ruído aleatório que suavização resolve: é viés
+  // sistemático (a estimativa de profundidade do quadril vs. ombro vs.
+  // joelho pode estar consistentemente "errada" na mesma direção em toda
+  // a sessão). Usar esse Z na mesma escala 1:1 que X/Y — que são medidos
+  // direto na imagem e são muito mais confiáveis — deixava o boneco
+  // inteiro inclinado. Z_DAMPING reduz a influência do Z sem zerá-la
+  // (ainda dá pra perceber agachamento/alcance para frente), mas garante
+  // que X/Y (a fonte confiável) dominem a rotação calculada.
+  // _enrich_depth() no backend já substitui o Z estimado por profundidade
+  // real do Kinect IR para quadril/joelho/tornozelo quando disponível —
+  // se um Kinect estiver conectado, considere subir este valor.
+  const Z_DAMPING = 0.35;
+  function landmarkDir(from, to) {
+    if (!from || !to) return null;
+    _dir.set(to.x - from.x, -(to.y - from.y), -(to.z - from.z) * Z_DAMPING);
+    if (_dir.lengthSq() < 1e-8) return null;
+    return _dir.normalize();
+  }
+
+  // setFromUnitVectors(a,b) é indefinido quando a e b são quase
+  // antiparalelos (180°) — o three.js escolhe um eixo perpendicular
+  // arbitrário nesse caso, que muda de frame a frame perto da
+  // singularidade. Braço/antebraço usam restDir=(0,-1,0) (repouso
+  // apontando pra baixo); levantar o braço na vertical faz dir→(0,1,0),
+  // exatamente o caso antiparalelo — daí o "pop"/distorção só nesse eixo,
+  // enquanto elevação lateral (~90°, longe da singularidade) sempre
+  // funcionou. Fallback usa um eixo de dobra fixo e estável (cotovelo/
+  // joelho dobram pra frente, nunca pra trás) em vez do arbitrário do
+  // three.js, então a transição pela vertical fica contínua.
+  const _bendAxis = new THREE.Vector3(0,0,1);
+  const _fallbackAxis = new THREE.Vector3();
+  function stableFromUnitVectors(out, from, to) {
+    const dot = THREE.MathUtils.clamp(from.dot(to), -1, 1);
+    if (dot < -0.9999) {
+      _fallbackAxis.crossVectors(_bendAxis, from);
+      if (_fallbackAxis.lengthSq() < 1e-6) _fallbackAxis.set(1,0,0).cross(from);
+      _fallbackAxis.normalize();
+      return out.setFromAxisAngle(_fallbackAxis, Math.PI);
+    }
+    return out.setFromUnitVectors(from, to);
+  }
+
+  function setBoneTarget(bone, from, to) {
+    const dir = landmarkDir(from, to);
+    if (!dir) { bone.hasTarget = false; return; }
+    stableFromUnitVectors(_worldQuat, bone.restDir, dir);
+    bone.parent.updateWorldMatrix(true, false);
+    bone.parent.getWorldQuaternion(_parentWorldQuat);
+    bone.target.copy(_parentWorldQuat).invert().multiply(_worldQuat);
+    bone.hasTarget = true;
+  }
+
+  let shoulderRollTarget = 0, shoulderRollC = 0;
+  function applyBones() {
+    for (const b of bones) if (b.hasTarget) b.group.quaternion.slerp(b.target, SLERP);
+    shoulderRollC += (shoulderRollTarget - shoulderRollC) * SLERP;
+    shoulderPivot.quaternion.setFromAxisAngle(new THREE.Vector3(0,0,1), shoulderRollC);
+  }
+
+  // Ancoragem dos pés no chão (Y): em vez de estimar o quanto "afundar" o
+  // quadril a partir de um heurístico solto de ângulo de joelho (que não
+  // garantia contato real com o solo — pernas "flutuando"), lê a posição
+  // MUNDIAL do pé de cada perna depois que as rotações dos ossos (FK) já
+  // foram aplicadas neste frame, e desloca a raiz em Y até o pé mais baixo
+  // tocar o chão (y≈FOOT_OFFSET). Isso vale tanto parado quanto agachando:
+  // o afundamento do quadril no squat emerge da própria cinemática, não de
+  // uma fórmula à parte.
+  const FOOT_OFFSET = 0.04;
+  const _footLocal  = new THREE.Vector3(0,-0.36,0);
+  const _footWorldL = new THREE.Vector3();
+  const _footWorldR = new THREE.Vector3();
+  const posState = {rootY:0}, posTarget = {rootY:0};
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function applyRootPosition(){
+    // matrixWorld dos pés já reflete o root.position.y do frame anterior
+    // (posState.rootY) — o quanto falta pro pé mais baixo tocar o chão é
+    // exatamente esse erro residual, somado ao offset já aplicado.
+    root.updateWorldMatrix(true, true);
+    _footWorldL.copy(_footLocal).applyMatrix4(lLL.matrixWorld);
+    _footWorldR.copy(_footLocal).applyMatrix4(rLL.matrixWorld);
+    const lowestFootY = Math.min(_footWorldL.y, _footWorldR.y);
+    posTarget.rootY = posState.rootY + (FOOT_OFFSET - lowestFootY);
+    posState.rootY = lerp(posState.rootY, posTarget.rootY, 0.12);
+    root.position.y = 1.0 + posState.rootY;
+  }
+
+  window.mapSkeleton3D = function(data){
+    if(!data.detected || !data.raw_landmarks || !data.raw_landmarks.length) return;
+    const lm = {};
+    // ── Espelhamento: x = 1 - x_original ──────────────────────────────────
+    // MediaPipe já rotula "left_*"/"right_*" anatomicamente corretos (é
+    // robusto ao flip que o backend já aplica na imagem da câmera para
+    // exibição em modo selfie). O que faltava era espelhar o EIXO X usado
+    // pela cena 3D: sem isso, levantar o braço direito fazia o boneco
+    // levantar o braço do lado esquerdo da tela — o oposto de um espelho.
+    data.raw_landmarks.forEach(l => {
+      lm[l.name] = (l.visibility > .35) ? {...l, x: 1.0 - l.x} : null;
+    });
+    const g = name => lm[name] || null;
+
+    const ls=g("left_shoulder"), rs=g("right_shoulder");
+    const lh=g("left_hip"),      rh=g("right_hip");
+    const lk=g("left_knee"),     rk=g("right_knee");
+    const la=g("left_ankle"),    ra=g("right_ankle");
+    const le=g("left_elbow"),    re=g("right_elbow");
+    const lw=g("left_wrist"),    rw=g("right_wrist");
+
+    const midHip = (lh&&rh) ? {x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2, z:(lh.z+rh.z)/2} : null;
+    const midSh  = (ls&&rs) ? {x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2, z:(ls.z+rs.z)/2} : null;
+
+    setBoneTarget(boneSpine, midHip, midSh);
+    if (ls && rs) shoulderRollTarget = -(rs.y - ls.y) * 2.0;
+
+    setBoneTarget(boneUpperLegL, lh, lk);
+    setBoneTarget(boneLowerLegL, lk, la);
+    setBoneTarget(boneUpperLegR, rh, rk);
+    setBoneTarget(boneLowerLegR, rk, ra);
+
+    setBoneTarget(boneUpperArmL, ls, le);
+    setBoneTarget(boneForearmL,  le, lw);
+    setBoneTarget(boneUpperArmR, rs, re);
+    setBoneTarget(boneForearmR,  re, rw);
+
+    // posTarget.rootY não é mais setado aqui — applyRootPosition() calcula
+    // o afundamento do quadril a cada frame via FK real (posição mundial
+    // dos pés), o que também cobre agachamento sem heurística à parte.
+
+    const vl = Math.abs(data.knee_valgus_l||0), vr = Math.abs(data.knee_valgus_r||0);
+    lKJ.material = vl>10 ? M.warn : M.joint;
+    rKJ.material = vr>10 ? M.warn : M.joint;
+  };
+
+  // Reset manual — usado pelo botão 🔄: descarta a pose atual do boneco
+  // (que pode ter "travado" torta se a primeira leitura foi ruim) e faz
+  // cada osso recomeçar do zero no próximo frame válido, em vez de
+  // esperar o Slerp corrigir sozinho aos poucos.
+  window.reset3DPose = function(){
+    for (const b of bones) {
+      b.group.quaternion.identity();
+      b.target.identity();
+      b.hasTarget = false;
+    }
+    shoulderRollTarget = 0; shoulderRollC = 0;
+    shoulderPivot.quaternion.identity();
+    posState.rootY = 0; posTarget.rootY = 0;
+    root.position.y = 1.0;
+  };
+
+  function resize(){
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  function updateCam(){
+    camera.position.x = camTarget.x + rad*Math.sin(az)*Math.cos(el2);
+    camera.position.y = camTarget.y + rad*Math.sin(el2);
+    camera.position.z = camTarget.z + rad*Math.cos(az)*Math.cos(el2);
+    camera.lookAt(camTarget);
+  }
+
+  let drag=false, lx=0, ly=0;
+  canvas.addEventListener("mousedown",  e=>{drag=true;lx=e.clientX;ly=e.clientY});
+  window.addEventListener("mouseup",    ()=>drag=false);
+  window.addEventListener("mousemove",  e=>{
+    if(!drag) return;
+    az  -= (e.clientX-lx)*.008;
+    el2 -= (e.clientY-ly)*.006;
+    el2  = Math.max(-.3,Math.min(1.0,el2));
+    lx=e.clientX; ly=e.clientY;
+  });
+  canvas.addEventListener("wheel", e=>{ rad=Math.max(1.5,Math.min(7,rad+e.deltaY*.005)); e.preventDefault(); },{passive:false});
+
+  function animate(){
+    requestAnimationFrame(animate);
+    applyBones(); applyRootPosition(); updateCam();
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>SeeMove — Boneco 3D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/socket.io@4.7.2/client-dist/socket.io.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0c14;color:#e8eaf0;font-family:'Segoe UI',system-ui,sans-serif;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+.toolbar{display:flex;align-items:center;gap:12px;padding:10px 16px;background:#13162280;border-bottom:1px solid rgba(255,255,255,0.07);flex-wrap:wrap;flex-shrink:0}
+.toolbar h2{font-size:14px;font-weight:600}
+.pill{display:flex;align-items:center;gap:6px;background:#1a1e2e;border:1px solid rgba(255,255,255,0.07);border-radius:999px;padding:4px 12px;font-size:12px;color:#8b90a0}
+.dot{width:7px;height:7px;border-radius:50%;background:#3e4558}
+.dot.on{background:#1fcc8a;animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.chip{background:#1a1e2e;border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:4px 10px;font-size:11px;display:flex;flex-direction:column;align-items:center;min-width:72px}
+.chip .cl{color:#8b90a0;font-size:10px;margin-bottom:1px}
+.chip .cv{font-weight:600;font-variant-numeric:tabular-nums}
+.chip .cv.ok{color:#1fcc8a}.chip .cv.warn{color:#f5a623}.chip .cv.err{color:#ff5c5c}
+#c3d{flex:1;display:block;width:100%}
+.hint{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);font-size:11px;color:#3e4558;background:rgba(12,14,24,.8);padding:3px 12px;border-radius:999px;pointer-events:none}
+.no-kinect{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#3e4558;font-size:14px;pointer-events:none;line-height:1.8}
+.fb-badge{position:fixed;bottom:36px;left:50%;transform:translateX(-50%);background:rgba(31,204,138,.15);border:1px solid #1fcc8a;color:#1fcc8a;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:500;max-width:420px;text-align:center;transition:all .4s;pointer-events:none}
+.fb-badge.warn{background:rgba(245,166,35,.15);border-color:#f5a623;color:#f5a623}
+.fb-badge.error{background:rgba(255,92,92,.15);border-color:#ff5c5c;color:#ff5c5c}
+.fb-badge.hidden{opacity:0}
+.resetbtn{background:#1a1e2e;border:1px solid rgba(255,255,255,0.13);border-radius:7px;color:#8b90a0;font-size:13px;padding:5px 10px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.resetbtn:hover{border-color:#1fcc8a;color:#e8eaf0}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <div class="pill"><div class="dot" id="cDot"></div><span id="cTxt">Conectando...</span></div>
+  <h2>🧍 Boneco 3D — SeeMove</h2>
+  <div class="chips">
+    <div class="chip"><span class="cl">Ombros</span><span class="cv ok" id="cSh">0.0°</span></div>
+    <div class="chip"><span class="cl">Quadril</span><span class="cv ok" id="cHp">0.0°</span></div>
+    <div class="chip"><span class="cl">Tronco</span><span class="cv ok" id="cTr">0.0°</span></div>
+    <div class="chip"><span class="cl">Joelho E</span><span class="cv ok" id="cKL">180°</span></div>
+    <div class="chip"><span class="cl">Joelho D</span><span class="cv ok" id="cKR">180°</span></div>
+  </div>
+  <button class="resetbtn" onclick="resetPose()" title="Reseta a posição do boneco e força uma nova leitura">🔄 Resetar boneco</button>
+</div>
+
+<canvas id="c3d"></canvas>
+
+<div class="no-kinect" id="noKinect">
+  Inicie o SeeMove com o Kinect conectado<br>para ver o boneco se mover em tempo real.<br><br>
+  <span style="font-size:11px">python main.py</span>
+</div>
+
+<div class="fb-badge hidden" id="fbBadge">—</div>
+<div class="hint">Arraste para girar · Scroll para zoom</div>
+
+<script>
+// ── Three.js — cena base ─────────────────────────────────────────────────
+const canvas   = document.getElementById("c3d");
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+if (THREE.ACESFilmicToneMapping) {
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+}
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0c14);
+scene.fog = new THREE.FogExp2(0x0a0c14, 0.045);
+
+const camera = new THREE.PerspectiveCamera(45,1,0.1,100);
+camera.position.set(0,1.5,4.5);
+
+// ── Iluminação "health-tech" ────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x8090b0, 0.45));
+const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+keyLight.position.set(3,6,4); keyLight.castShadow=true;
+keyLight.shadow.mapSize.set(2048,2048);
+keyLight.shadow.camera.near = 1; keyLight.shadow.camera.far = 14;
+keyLight.shadow.camera.left = -3; keyLight.shadow.camera.right = 3;
+keyLight.shadow.camera.top = 3; keyLight.shadow.camera.bottom = -3;
+keyLight.shadow.radius = 4;
+scene.add(keyLight);
+const rimLight = new THREE.DirectionalLight(0x1fcc8a, 0.35);
+rimLight.position.set(-3,2.5,-3); scene.add(rimLight);
+const fillLight = new THREE.DirectionalLight(0x4a9eff, 0.2);
+fillLight.position.set(-2,1,3); scene.add(fillLight);
+
+// ── Chão com gradiente radial (sem depender de textura externa) ─────────
+function makeFloorTexture() {
+  const size = 512;
+  const c = document.createElement("canvas"); c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  const grad = ctx.createRadialGradient(size/2,size/2,0, size/2,size/2,size/2);
+  grad.addColorStop(0,   "rgba(31,204,138,0.16)");
+  grad.addColorStop(0.5, "rgba(26,30,46,0.9)");
+  grad.addColorStop(1,   "rgba(10,12,20,1)");
+  ctx.fillStyle = grad; ctx.fillRect(0,0,size,size);
+  ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1;
+  const step = size/16;
+  for (let i=0;i<=16;i++){
+    ctx.beginPath(); ctx.moveTo(i*step,0); ctx.lineTo(i*step,size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i*step); ctx.lineTo(size,i*step); ctx.stroke();
+  }
+  return new THREE.CanvasTexture(c);
+}
+const floorMat = new THREE.MeshStandardMaterial({map: makeFloorTexture(), roughness:.85, metalness:.05});
+const floor = new THREE.Mesh(new THREE.CircleGeometry(3.2, 48), floorMat);
+floor.rotation.x = -Math.PI/2; floor.receiveShadow = true;
+scene.add(floor);
+
+// ── Materiais ─────────────────────────────────────────────────────────────
+const M = {
+  body:  new THREE.MeshStandardMaterial({color:0x3d7fd6, roughness:.35, metalness:.15}),
+  head:  new THREE.MeshStandardMaterial({color:0x5aa3f0, roughness:.35, metalness:.1}),
+  joint: new THREE.MeshStandardMaterial({color:0x1fcc8a, roughness:.25, metalness:.25, emissive:0x0c4d34, emissiveIntensity:.4}),
+  limb:  new THREE.MeshStandardMaterial({color:0x2e6bb8, roughness:.4, metalness:.1}),
+  warn:  new THREE.MeshStandardMaterial({color:0xf5a623, roughness:.25, emissive:0xf5a623, emissiveIntensity:.35}),
+};
+
+function cyl(rt,rb,h,mat){
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,14),mat);
+  m.castShadow=true; m.receiveShadow=true; return m;
+}
+function sph(r,mat){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,14,14),mat);
+  m.castShadow=true; return m;
+}
+
+// ── Hierarquia do boneco ─────────────────────────────────────────────────
+// root      → posição geral (agachamento) — não gira, pernas ficam "no chão"
+//   hips    → esferas de referência do quadril (fixas, sem rotação)
+//   ul/ll   → pernas — cada segmento gira de acordo com o vetor 3D real
+//             quadril→joelho / joelho→tornozelo (quaternion local)
+//   torsoPivot → gira conforme o vetor quadril→ombro (a coluna "dobra")
+//     torso
+//     shoulderPivot (filho de torsoPivot — ombros/cabeça/braços seguem a coluna)
+//       neck, head, lShJ/rShJ
+//       ua/fa (braços) — giram conforme ombro→cotovelo / cotovelo→pulso
+const root = new THREE.Group(); root.position.set(0,1.0,0); scene.add(root);
+
+const lHipJ = sph(.07,M.joint); lHipJ.position.set(-.11,0,0); root.add(lHipJ);
+const rHipJ = sph(.07,M.joint); rHipJ.position.set(.11,0,0);  root.add(rHipJ);
+
+const torsoPivot = new THREE.Group(); torsoPivot.position.set(0,0,0); root.add(torsoPivot);
+const torso = cyl(.14,.16,.42,M.body); torso.position.y=.21; torsoPivot.add(torso);
+
+const shoulderPivot = new THREE.Group(); shoulderPivot.position.y=.42; torsoPivot.add(shoulderPivot);
+const neck = cyl(.05,.07,.12,M.body); neck.position.y=.06; shoulderPivot.add(neck);
+const head = sph(.14,M.head); head.position.y=.24; shoulderPivot.add(head);
+const lShJ = sph(.06,M.joint); lShJ.position.set(-.22,.02,0); shoulderPivot.add(lShJ);
+const rShJ = sph(.06,M.joint); rShJ.position.set(.22,.02,0);  shoulderPivot.add(rShJ);
+
+function makeArm(side){ // side: -1=esq, 1=dir
+  const ua = new THREE.Group(); ua.position.set(side*.22,.02,0); shoulderPivot.add(ua);
+  const uaM = cyl(.045,.055,.26,M.limb); uaM.position.y=-.13; ua.add(uaM);
+  const ej  = sph(.045,M.joint); ej.position.y=-.26; ua.add(ej);
+  const fa  = new THREE.Group(); fa.position.y=-.26; ua.add(fa);
+  const faM = cyl(.035,.045,.22,M.limb); faM.position.y=-.11; fa.add(faM);
+  return {ua, fa};
+}
+const {ua:lUA, fa:lFA} = makeArm(-1);
+const {ua:rUA, fa:rFA} = makeArm(1);
+
+function makeLeg(side){ // side: -1=esq, 1=dir
+  const ul = new THREE.Group(); ul.position.set(side*.11,0,0); root.add(ul);
+  const ulM = cyl(.065,.075,.40,M.body); ulM.position.y=-.20; ul.add(ulM);
+  const kj  = sph(.06,M.joint); kj.position.y=-.40; ul.add(kj);
+  const ll  = new THREE.Group(); ll.position.y=-.40; ul.add(ll);
+  const llM = cyl(.05,.06,.36,M.limb); llM.position.y=-.18; ll.add(llM);
+  const ft  = cyl(.04,.06,.14,M.limb); ft.rotation.x=-Math.PI/3; ft.position.set(0,-.36,.06); ll.add(ft);
+  return {ul, ll, kj};
+}
+const {ul:lUL, ll:lLL, kj:lKJ} = makeLeg(-1);
+const {ul:rUL, ll:rLL, kj:rKJ} = makeLeg(1);
+
+// ── Orientação por vetor 3D real + Slerp (substitui as fórmulas 2D antigas) ─
+// Cada osso é rotacionado com base no vetor 3D entre dois landmarks do
+// MediaPipe (não só x/y — agora usamos z também, profundidade real).
+// O quaternion alvo é calculado em espaço de mundo e convertido para o
+// espaço local do grupo-pai (getWorldQuaternion + invert), e a suavização
+// é feita por Slerp de quaternion (não Lerp escalar de ângulos soltos).
+// Direção de repouso de cada osso — o eixo local que a malha ocupa quando
+// o grupo-pai está sem rotação. Braços/pernas usam meshes deslocadas em
+// -Y (apontam pra baixo do pivô), mas o torso é deslocado em +Y
+// (torso.position.y = .21 — aponta pra CIMA do quadril). Usar o mesmo
+// REST_DIR_DOWN pra coluna fazia o quaternion calcular 180° de rotação
+// toda vez que a pessoa ficava em pé (quadril→ombro aponta pra +Y),
+// virando o tronco de cabeça pra baixo.
+const REST_DIR_DOWN = new THREE.Vector3(0,-1,0);
+const REST_DIR_UP   = new THREE.Vector3(0,1,0);
+const SLERP = 0.18;
+const _dir = new THREE.Vector3();
+const _worldQuat = new THREE.Quaternion();
+const _parentWorldQuat = new THREE.Quaternion();
+
+// Estado suavizado por grupo — cada entrada é {group, quat, target, hasTarget}
+const bones = [];
+function registerBone(group, parentForLocalSpace, restDir) {
+  const entry = {group, parent: parentForLocalSpace, restDir: restDir || REST_DIR_DOWN, target: new THREE.Quaternion(), hasTarget:false};
+  bones.push(entry);
+  return entry;
+}
+const boneUpperArmL = registerBone(lUA, shoulderPivot);
+const boneForearmL  = registerBone(lFA, lUA);
+const boneUpperArmR = registerBone(rUA, shoulderPivot);
+const boneForearmR  = registerBone(rFA, rUA);
+const boneUpperLegL = registerBone(lUL, root);
+const boneLowerLegL = registerBone(lLL, lUL);
+const boneUpperLegR = registerBone(rUL, root);
+const boneLowerLegR = registerBone(rLL, rUL);
+const boneSpine     = registerBone(torsoPivot, root, REST_DIR_UP);
+
+// MediaPipe: x/y normalizados [0,1] (y cresce pra baixo), z relativo (m).
+// Convertemos para um vetor de direção em espaço de mundo compatível com
+// a cena (Y pra cima, Z pra fora da tela).
+function landmarkDir(from, to) {
+  if (!from || !to) return null;
+  _dir.set(
+    to.x - from.x,
+    -(to.y - from.y),
+    -(to.z - from.z) * 1.6   // amplifica um pouco a profundidade (sinal fraco no MediaPipe)
+  );
+  if (_dir.lengthSq() < 1e-8) return null;
+  return _dir.normalize();
+}
+
+function setBoneTarget(bone, from, to) {
+  const dir = landmarkDir(from, to);
+  if (!dir) { bone.hasTarget = false; return; }
+  _worldQuat.setFromUnitVectors(bone.restDir, dir);
+  bone.parent.updateWorldMatrix(true, false);
+  bone.parent.getWorldQuaternion(_parentWorldQuat);
+  bone.target.copy(_parentWorldQuat).invert().multiply(_worldQuat);
+  bone.hasTarget = true;
+}
+
+// Roll (giro em torno do próprio eixo da coluna) não dá pra extrair de um
+// único vetor — aplicamos um pequeno ajuste extra a partir da inclinação
+// de ombros, multiplicado por cima do quaternion base da coluna.
+let shoulderRollTarget = 0, shoulderRollC = 0;
+
+function applyBones() {
+  for (const b of bones) {
+    if (b.hasTarget) b.group.quaternion.slerp(b.target, SLERP);
+  }
+  shoulderRollC += (shoulderRollTarget - shoulderRollC) * SLERP;
+  shoulderPivot.quaternion.setFromAxisAngle(new THREE.Vector3(0,0,1), shoulderRollC);
+}
+
+// ── Posição do root (agachamento / profundidade) — ainda escalar, suave ──
+const posState = {rootY:0}; const posTarget = {rootY:0};
+function lerp(a,b,t){ return a+(b-a)*t; }
+function applyRootPosition(){
+  posState.rootY = lerp(posState.rootY, posTarget.rootY, 0.12);
+  root.position.y = 1.0 + posState.rootY;
+}
+
+// Reset manual — descarta a pose atual (que pode ter "travado" torta se a
+// primeira leitura foi ruim) para cada osso recomeçar do zero no próximo
+// frame válido, em vez de esperar o Slerp corrigir sozinho aos poucos.
+function reset3DPose(){
+  for (const b of bones) {
+    b.group.quaternion.identity();
+    b.target.identity();
+    b.hasTarget = false;
+  }
+  shoulderRollTarget = 0; shoulderRollC = 0;
+  shoulderPivot.quaternion.identity();
+  posState.rootY = 0; posTarget.rootY = 0;
+  root.position.y = 1.0;
+}
+function resetPose(){
+  reset3DPose();
+  fetch("/api/tracker/reset_pose", {method:"POST"});
+}
+
+// ── Mapeamento de landmarks MediaPipe → esqueleto 3D ──────────────────────
+function mapSkeleton(data){
+  if(!data.detected || !data.raw_landmarks || !data.raw_landmarks.length) return;
+  const lm = {};
+  // Espelhamento: x = 1 - x_original — sem isso, levantar o braço direito
+  // fazia o boneco levantar o braço do lado esquerdo da tela (o oposto de
+  // um espelho). MediaPipe já rotula left_*/right_* anatomicamente certo.
+  data.raw_landmarks.forEach(l => { lm[l.name] = {...l, x: 1.0 - l.x}; });
+
+  const g = name => {
+    const p = lm[name];
+    return (p && p.visibility > .35) ? p : null;
+  };
+
+  const ls=g("left_shoulder"), rs=g("right_shoulder");
+  const lh=g("left_hip"),      rh=g("right_hip");
+  const lk=g("left_knee"),     rk=g("right_knee");
+  const la=g("left_ankle"),    ra=g("right_ankle");
+  const le=g("left_elbow"),    re=g("right_elbow");
+  const lw=g("left_wrist"),    rw=g("right_wrist");
+
+  const midHip = (lh&&rh) ? {x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2, z:(lh.z+rh.z)/2} : null;
+  const midSh  = (ls&&rs) ? {x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2, z:(ls.z+rs.z)/2} : null;
+
+  // Coluna: quadril → ombro (o tronco "dobra" de verdade, em 3D)
+  setBoneTarget(boneSpine, midHip, midSh);
+
+  // Roll dos ombros (giro em torno da coluna) — vem da inclinação Y entre ombros
+  if (ls && rs) shoulderRollTarget = -(rs.y - ls.y) * 2.0;
+
+  // Pernas: quadril → joelho → tornozelo (flexão real do joelho)
+  setBoneTarget(boneUpperLegL, lh, lk);
+  setBoneTarget(boneLowerLegL, lk, la);
+  setBoneTarget(boneUpperLegR, rh, rk);
+  setBoneTarget(boneLowerLegR, rk, ra);
+
+  // Braços: ombro → cotovelo → pulso
+  setBoneTarget(boneUpperArmL, ls, le);
+  setBoneTarget(boneForearmL,  le, lw);
+  setBoneTarget(boneUpperArmR, rs, re);
+  setBoneTarget(boneForearmR,  re, rw);
+
+  // Profundidade do agachamento — ainda um heurístico de posição (não é
+  // uma rotação de osso, é o corpo inteiro abaixando)
+  if (lh && lk && rh && rk) {
+    const dyL = lk.y - lh.y, dyR = rk.y - rh.y;
+    const avgDy = (dyL + dyR) / 2;
+    posTarget.rootY = -Math.max(0, (avgDy - 0.25) * 0.8);
+  }
+
+  // Cor dos joelhos de acordo com valgo
+  const vl = Math.abs(data.knee_valgus_l||0);
+  const vr = Math.abs(data.knee_valgus_r||0);
+  lKJ.material = vl>10 ? M.warn : M.joint;
+  rKJ.material = vr>10 ? M.warn : M.joint;
+}
+
+// ── Animação de idle (sem dados ao vivo) ──────────────────────────────────
+let idleTick=0, kinectLive=false;
+function idleAnim(){
+  if(kinectLive) return;
+  idleTick+=.018;
+  shoulderRollTarget = Math.sin(idleTick*.7)*.04;
+  const sway = Math.sin(idleTick*.25)*.02;
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1), sway);
+  torsoPivot.quaternion.slerp(q, 0.05);
+}
+
+// ── Feedback badge ────────────────────────────────────────────────────────
+let fbTimeout;
+function showFb(msg, sev){
+  const el = document.getElementById("fbBadge");
+  el.textContent = msg;
+  el.className   = "fb-badge " + (sev||"ok");
+  clearTimeout(fbTimeout);
+  fbTimeout = setTimeout(()=>el.classList.add("hidden"), 5000);
+}
+
+// ── Socket.IO ─────────────────────────────────────────────────────────────
+const socket = io();
+socket.on("pose_reset", () => reset3DPose());
+socket.on("connect",    ()=>{ document.getElementById("cDot").className="dot on"; document.getElementById("cTxt").textContent="Conectado"; });
+socket.on("disconnect", ()=>{ document.getElementById("cDot").className="dot";    document.getElementById("cTxt").textContent="Desconectado"; });
+
+socket.on("frame", d => {
+  if(d.detected && !kinectLive){
+    kinectLive=true;
+    document.getElementById("noKinect").style.display="none";
+  }
+  if(!d.detected && kinectLive){
+    kinectLive=false;
+    document.getElementById("noKinect").style.display="";
+  }
+  mapSkeleton(d);
+
+  // Chips
+  function cc(v,w,e){ return Math.abs(v)>e?"err":Math.abs(v)>w?"warn":"ok"; }
+  const sg=v=>(v>=0?"+":"")+v.toFixed(1)+"°";
+  setChip("cSh", sg(d.shoulder_tilt||0),  cc(d.shoulder_tilt||0,3,6));
+  setChip("cHp", sg(d.hip_tilt||0),       cc(d.hip_tilt||0,4,8));
+  setChip("cTr", sg(d.trunk_lean_x||0),   cc(d.trunk_lean_x||0,5,10));
+  setChip("cKL", (d.knee_angle_l||180).toFixed(0)+"°", "ok");
+  setChip("cKR", (d.knee_angle_r||180).toFixed(0)+"°", "ok");
+
+  // Feedback badge
+  if(d.feedback && d.feedback !== "Aguardando..."){
+    showFb(d.feedback, d.severity);
+  }
+});
+
+function setChip(id,txt,cls){
+  const el=document.getElementById(id);
+  el.textContent=txt; el.className="cv "+cls;
+}
+
+// ── Órbita ────────────────────────────────────────────────────────────────
+let drag=false, lx=0, ly=0, az=0, el2=.18, rad=4.5;
+const tgt = new THREE.Vector3(0,1.1,0);
+canvas.addEventListener("mousedown",  e=>{drag=true;lx=e.clientX;ly=e.clientY});
+canvas.addEventListener("mouseup",    ()=>drag=false);
+canvas.addEventListener("mouseleave", ()=>drag=false);
+canvas.addEventListener("mousemove",  e=>{
+  if(!drag) return;
+  az  -= (e.clientX-lx)*.008;
+  el2 -= (e.clientY-ly)*.006;
+  el2  = Math.max(-.3,Math.min(1.0,el2));
+  lx=e.clientX; ly=e.clientY;
+});
+canvas.addEventListener("wheel", e=>{ rad=Math.max(1.5,Math.min(8,rad+e.deltaY*.005)); e.preventDefault(); },{passive:false});
+
+function updateCam(){
+  camera.position.x = tgt.x + rad*Math.sin(az)*Math.cos(el2);
+  camera.position.y = tgt.y + rad*Math.sin(el2);
+  camera.position.z = tgt.z + rad*Math.cos(az)*Math.cos(el2);
+  camera.lookAt(tgt);
+}
+
+// ── Resize ────────────────────────────────────────────────────────────────
+function resize(){
+  const w=canvas.clientWidth, h=canvas.clientHeight;
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize); resize();
+
+// ── Render loop ───────────────────────────────────────────────────────────
+function animate(){
+  requestAnimationFrame(animate);
+  idleAnim(); applyBones(); applyRootPosition(); updateCam();
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>
