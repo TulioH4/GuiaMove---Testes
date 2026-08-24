@@ -1,0 +1,26 @@
+# SeeMove — dependências (versão Kinect + MediaPipe)
+# pip install -r requirements.txt
+
+# Visão computacional e pose
+mediapipe>=0.10
+opencv-python>=4.8
+
+# Áudio
+pyttsx3>=2.90
+sounddevice>=0.4.6
+soundfile>=0.12
+numpy>=1.24
+
+# Dashboard web
+flask>=3.0
+flask-socketio>=5.3
+
+# Profundidade Kinect (opcional — só necessário com Kinect v1 físico)
+# Instale APENAS se tiver o Kinect v1 e o driver libfreenect configurado:
+# pip install freenect
+# (Windows: requer driver Zadig + libusb-win32 antes de instalar)
+
+# Vozes de TTS em nuvem (opcional — só necessário se --tts-provider != pyttsx3)
+# azure-cognitiveservices-speech>=1.34   # --tts-provider azure
+# google-cloud-texttospeech>=2.16        # --tts-provider google
+# requests>=2.31                         # --tts-provider elevenlabs
