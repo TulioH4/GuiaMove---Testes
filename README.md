@@ -12,10 +12,6 @@
 </p>
 
 <p align="center">
-  <img src="assets/countdown.svg" alt="Contador de dias até a banca" width="480">
-</p>
-
-<p align="center">
   <a href="#-o-que-é">O que é</a> ·
   <a href="#-como-funciona">Como funciona</a> ·
   <a href="#-exercícios">Exercícios</a> ·
