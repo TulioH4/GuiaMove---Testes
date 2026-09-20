@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 150" width="560" height="150" role="img" aria-labelledby="t d">
+  <title id="t">Contador da banca</title>
+  <desc id="d">A data da banca ainda não foi definida.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#06101C"/>
+      <stop offset="1" stop-color="#0B2A35"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .num { font: 800 56px ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif; fill: #F4FBFA; }
+    .rot { font: 800 30px ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif; fill: #F4FBFA; }
+    .apo { font: 500 18px ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif; fill: #9DB4C7; }
+    .tag { font: 700 12px ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif; letter-spacing: 3px; fill: #FBBF24; }
+  </style>
+  <rect width="560" height="150" rx="22" fill="url(#bg)"/>
+  <circle cx="86" cy="75" r="52" fill="none" stroke="#17384A" stroke-width="10"/>
+  <circle cx="86" cy="75" r="52" fill="none" stroke="#FBBF24" stroke-width="10" stroke-linecap="round"
+          stroke-dasharray="0.0 326.7" transform="rotate(-90 86 75)"/>
+  <text x="86" y="95" text-anchor="middle" class="num">?</text>
+  <text x="170" y="52" class="tag">CONTAGEM REGRESSIVA</text>
+  <text x="170" y="92" class="rot">data da banca a definir</text>
+  <text x="170" y="122" class="apo">em breve por aqui</text>
+</svg>
