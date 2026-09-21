@@ -1,0 +1,22 @@
+Bibliotecas de terceiros usadas pelo painel (web/templates/dashboard.html).
+Ficam aqui, dentro do projeto, para o painel abrir SEM internet (na feira, por exemplo).
+São os mesmos arquivos que o painel antes baixava de CDN, sem nenhuma alteração.
+
+three.min.js
+  three.js r128 (Copyright 2010-2021 Three.js Authors), licença MIT
+  origem: https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js
+  tamanho: 603445 bytes
+  SRI (publicado pelo cdnjs): sha512-dLxUelApnYxpLt6K2iomGngnHO83iUvZytA3YjDUCjT0HDOHKXnVYdf3hU4JjM8uEhxf9nD1/ey98U3t2vZ0qQ==
+
+socket.io.min.js
+  Socket.IO client v4.7.2 (c) 2014-2023 Guillermo Rauch, licença MIT
+  origem: https://cdn.jsdelivr.net/npm/socket.io@4.7.2/client-dist/socket.io.min.js
+  tamanho: 49732 bytes
+  sha256 (publicado pelo jsDelivr): g99KvH7slB8dKa4lToC6wLuC05j74ujuTqKn78jnBPE=
+
+Para conferir um arquivo (PowerShell):
+  Get-FileHash three.min.js -Algorithm SHA512     (compare em base64 com o SRI acima)
+  Get-FileHash socket.io.min.js -Algorithm SHA256
+
+Se a pasta vendor/ faltar, o painel volta sozinho a buscar as duas bibliotecas nos CDNs (precisa de internet).
+Não troque de versão sem testar o boneco 3D: o código dele foi escrito para o three.js r128.
