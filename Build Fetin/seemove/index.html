@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>GuiaMove — exercício guiado por voz</title>
+<meta name="description" content="GuiaMove é um treinador de exercícios para pessoas cegas ou com baixa visão: uma câmera acompanha o corpo e uma voz diz o que ajustar. Projeto do Inatel apresentado na FETIN.">
+<meta name="theme-color" content="#0061AE">
+<link rel="icon" href="assets/logo-icon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:title" content="GuiaMove — exercício guiado por voz">
+<meta property="og:description" content="O treinador de exercícios que enxerga por você: a câmera acompanha o corpo e a voz diz o que ajustar.">
+<meta property="og:url" content="https://tulioh4.github.io/GuiaMove/">
+<meta property="og:image" content="https://tulioh4.github.io/GuiaMove/assets/og.png">
+<meta property="og:image:alt" content="Logo do GuiaMove">
+<meta name="twitter:card" content="summary_large_image">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #FFFFFF;
+    --soft: #F2F8FD;
+    --card: #FFFFFF;
+    --line: #D2E4F2;
+    --ink: #26333F;
+    --muted: #4F6377;
+    --brand: #0061AE;
+    --brand-hover: #004F8E;
+    --on-brand: #FFFFFF;
+    --sky: #1BAEEE;
+    --focus: #04537F;
+    --deep: #04537F;
+    --deep-2: #063C5E;
+    --on-deep: #FFFFFF;
+    --on-deep-muted: #BFE3F9;
+    --shadow: 0 1px 2px rgba(4, 83, 127, .06), 0 8px 24px rgba(4, 83, 127, .07);
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; background: var(--bg); }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 1.0625rem/1.65 system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  .wrap { width: min(100% - 2rem, 62rem); margin-inline: auto; }
+  a { color: var(--brand); text-underline-offset: .2em; }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: .25rem; }
+  img { max-width: 100%; height: auto; }
+
+  .skip { position: absolute; left: 1rem; top: -4rem; background: var(--brand); color: var(--on-brand); padding: .75rem 1rem; border-radius: .5rem; font-weight: 700; z-index: 10; }
+  .skip:focus { top: 1rem; }
+
+  header.top { border-bottom: 1px solid var(--line); background: var(--bg); }
+  header.top .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem 1.5rem; padding-block: .9rem; }
+  .brand { display: inline-flex; align-items: center; }
+  .brand img { display: block; height: 1.9rem; width: auto; }
+  nav ul { display: flex; flex-wrap: wrap; gap: .1rem 1.25rem; list-style: none; margin: 0; padding: 0; }
+  nav a { display: inline-block; padding: .55rem 0; color: var(--ink); font-weight: 600; text-decoration: none; }
+  nav a:hover { color: var(--brand); text-decoration: underline; }
+
+  h1, h2, h3 { line-height: 1.15; letter-spacing: -.02em; text-wrap: balance; margin: 0; }
+  h1 { font-size: clamp(2.1rem, 8vw, 3.5rem); font-weight: 800; margin-bottom: 1rem; }
+  h1 span { color: var(--brand); }
+  h2 { font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 800; margin-bottom: 1rem; }
+  h3 { font-size: 1.2rem; margin-bottom: .35rem; }
+  p { margin: 0 0 1rem; max-width: 42rem; }
+  .eyebrow { font-size: .8rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--brand); margin: 0 0 .5rem; }
+  .lead { font-size: 1.2rem; color: var(--muted); }
+
+  .hero { padding-block: clamp(1.75rem, 6vw, 4rem); background: linear-gradient(180deg, var(--soft), var(--bg)); }
+  .hero .wrap { display: grid; gap: 2rem; align-items: center; }
+  .hero-art { width: min(100%, 20rem); margin-inline: auto; }
+  .hero-art img { display: block; width: 100%; }
+  @media (min-width: 52rem) {
+    .hero .wrap { grid-template-columns: 1.15fr .85fr; }
+    .hero-art { width: min(100%, 26rem); }
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }
+  .btn { display: inline-flex; align-items: center; min-height: 3rem; padding: 0 1.4rem; border-radius: .8rem; font-weight: 700; text-decoration: none; border: 2px solid var(--brand); }
+  .btn.primary { background: var(--brand); color: var(--on-brand); }
+  .btn.primary:hover { background: var(--brand-hover); border-color: var(--brand-hover); }
+  .btn.ghost { color: var(--brand); background: var(--bg); }
+  .btn.ghost:hover { background: var(--soft); }
+
+  section.block { padding-block: clamp(2rem, 6vw, 3.5rem); scroll-margin-top: 1rem; }
+  section.block.soft {
+    background-color: var(--soft);
+    background-image: radial-gradient(rgba(0, 97, 174, .10) 1.3px, transparent 1.4px);
+    background-size: 24px 24px;
+  }
+
+  ol.steps { list-style: none; counter-reset: passo; margin: 1.5rem 0 0; padding: 0; display: grid; gap: 1.1rem; }
+  ol.steps li { counter-increment: passo; display: grid; grid-template-columns: 3rem 1fr; gap: 1rem; align-items: start; }
+  ol.steps li::before {
+    content: counter(passo); display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 50%;
+    background: var(--brand); color: var(--on-brand); font-weight: 800; font-size: 1.25rem;
+  }
+  ol.steps p { margin: 0; color: var(--muted); }
+  @media (min-width: 46rem) { ol.steps.row { grid-template-columns: repeat(3, 1fr); } ol.steps.row li { grid-template-columns: 1fr; } }
+
+  /* Como funciona: passos + desenho */
+  .how { display: grid; gap: 2rem; align-items: center; }
+  @media (min-width: 52rem) { .how { grid-template-columns: 1.2fr .8fr; gap: 3rem; } }
+  .how ol.steps { margin-top: 1.25rem; }
+  figure.figura { margin: 0; justify-self: center; width: min(100%, 19rem); }
+  figure.figura img { display: block; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 1.5rem; box-shadow: var(--shadow); }
+  figure.figura figcaption { margin-top: .75rem; color: var(--muted); font-size: .95rem; text-align: center; }
+
+  .cards { display: grid; gap: 1rem; margin-top: 1.5rem; }
+  @media (min-width: 46rem) { .cards.three { grid-template-columns: repeat(3, 1fr); } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 1.1rem; padding: 1.3rem; box-shadow: var(--shadow); }
+  .card p { margin: 0; color: var(--muted); }
+  .card ul { margin: .5rem 0 0; padding-left: 1.2rem; color: var(--muted); }
+  .tag { display: inline-block; margin-top: .9rem; padding: .2rem .7rem; border-radius: 999px; background: var(--soft); border: 1px solid var(--line); font-size: .85rem; font-weight: 700; color: var(--brand); }
+
+  ul.chips { display: flex; flex-wrap: wrap; gap: .6rem; list-style: none; margin: 1.25rem 0 0; padding: 0; }
+  ul.chips li { border: 1.5px solid var(--line); background: var(--card); border-radius: 999px; padding: .35rem .95rem; font-weight: 600; }
+  ul.chips li.strong { border-color: var(--brand); color: var(--brand); }
+  .note { color: var(--muted); font-size: .95rem; margin-top: 1rem; }
+
+  /* Tudo pela voz */
+  .voz { display: grid; gap: 2rem; align-items: start; }
+  @media (min-width: 52rem) { .voz { grid-template-columns: 1fr 1fr; gap: 3rem; } }
+  .voz h3 { margin-top: .25rem; }
+  ul.fala { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: .7rem; }
+  ul.fala li {
+    position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 1.1rem 1.1rem 1.1rem .3rem;
+    padding: .75rem 1rem .75rem 3.1rem; box-shadow: var(--shadow); font-size: 1rem; line-height: 1.5;
+  }
+  ul.fala li::before {
+    content: ""; position: absolute; left: .9rem; top: .85rem; width: 1.5rem; height: 1.5rem;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 9v6h4l5 4V5L8 9H4z' fill='%230061AE'/%3E%3Cpath d='M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12' stroke='%231BAEEE' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  /* Para quem quer saber mais */
+  details.mais { margin-top: 1.25rem; background: var(--card); border: 1px solid var(--line); border-radius: 1rem; box-shadow: var(--shadow); }
+  details.mais summary { cursor: pointer; padding: 1rem 1.25rem; font-weight: 700; color: var(--brand); border-radius: 1rem; }
+  details.mais summary:hover { background: var(--soft); }
+  details.mais[open] summary { border-bottom: 1px solid var(--line); border-radius: 1rem 1rem 0 0; }
+  dl.tec { margin: 0; padding: .5rem 1.25rem 1.1rem; display: grid; gap: .1rem 1.25rem; }
+  @media (min-width: 40rem) { dl.tec { grid-template-columns: 11rem 1fr; } }
+  dl.tec dt { font-weight: 700; margin-top: .8rem; }
+  dl.tec dd { margin: 0; color: var(--muted); }
+  @media (min-width: 40rem) { dl.tec dt { margin-top: .8rem; } dl.tec dd { margin-top: .8rem; } }
+
+  ul.team { list-style: none; margin: 1.5rem 0 0; padding: 0; display: grid; gap: .9rem; }
+  @media (min-width: 40rem) { ul.team { grid-template-columns: repeat(2, 1fr); } }
+  ul.team li { display: flex; align-items: center; gap: 1rem; background: var(--card); border: 1px solid var(--line); border-radius: 1rem; padding: .9rem 1.1rem; box-shadow: var(--shadow); }
+  ul.team .ini { flex: none; display: grid; place-items: center; width: 2.9rem; height: 2.9rem; border-radius: 50%; background: var(--brand); color: var(--on-brand); font-weight: 800; letter-spacing: .02em; }
+  ul.team strong { display: block; font-size: 1.05rem; line-height: 1.3; }
+  ul.team span { color: var(--muted); font-size: .95rem; }
+  .inst { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-bottom: .75rem; }
+  .pill { display: inline-block; border: 2px solid var(--brand); color: var(--brand); border-radius: 999px; padding: .1rem .8rem; font-weight: 800; letter-spacing: .08em; font-size: .9rem; background: var(--bg); }
+  .thanks { margin: 1.5rem 0 0; color: var(--muted); }
+  .thanks strong { color: var(--ink); font-weight: 700; }
+
+  /* Faixa final */
+  .fim { position: relative; overflow: hidden; color: var(--on-deep); background: linear-gradient(135deg, var(--deep), var(--deep-2)); padding-block: clamp(2rem, 6vw, 3.25rem); }
+  .fim::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-radial-gradient(circle at 92% 50%, rgba(255, 255, 255, .13) 0 2px, transparent 2px 52px);
+    -webkit-mask-image: radial-gradient(circle at 92% 50%, #000 0, transparent 70%);
+            mask-image: radial-gradient(circle at 92% 50%, #000 0, transparent 70%);
+  }
+  .fim .wrap { position: relative; }
+  .fim h2 { color: var(--on-deep); margin-bottom: .5rem; }
+  .fim p { color: var(--on-deep-muted); }
+  .fim .btn.primary { background: var(--bg); color: var(--deep); border-color: var(--bg); }
+  .fim .btn.primary:hover { background: var(--soft); border-color: var(--soft); }
+  .fim :focus-visible { outline-color: var(--on-deep); }
+
+  footer { background: var(--deep-2); color: var(--on-deep); font-size: .95rem; padding-block: 2.25rem 1.5rem; }
+  footer a { color: var(--on-deep); }
+  footer :focus-visible { outline-color: var(--on-deep); }
+  footer .cols { display: grid; gap: 1.75rem; }
+  @media (min-width: 52rem) { footer .cols { grid-template-columns: 1.3fr 1fr 1.3fr; gap: 2.5rem; } }
+  footer img { display: block; height: 1.7rem; width: auto; margin-bottom: .75rem; }
+  footer h2 { font-size: .8rem; letter-spacing: .14em; text-transform: uppercase; color: var(--on-deep-muted); margin: 0 0 .6rem; }
+  footer p { margin: 0 0 .5rem; color: var(--on-deep-muted); max-width: 30rem; }
+  footer ul, footer nav ul { display: block; list-style: none; margin: 0; padding: 0; }
+  footer li a { display: inline-block; padding: .2rem 0; text-decoration: none; }
+  footer li a:hover { text-decoration: underline; }
+  footer .legal { margin-top: 1.75rem; padding-top: 1.1rem; border-top: 1px solid rgba(255, 255, 255, .2); display: flex; flex-wrap: wrap; justify-content: space-between; gap: .35rem 1.5rem; font-size: .9rem; color: var(--on-deep-muted); }
+  footer .legal p { margin: 0; max-width: none; }
+  footer .legal strong { color: var(--on-deep); }
+</style>
+</head>
+<body>
+<a class="skip" href="#conteudo">Pular para o conteúdo</a>
+
+<header class="top" id="topo">
+  <div class="wrap">
+    <a class="brand" href="#topo">
+      <img src="assets/logo-wordmark.svg" alt="GuiaMove" width="140" height="25">
+    </a>
+    <nav aria-label="Seções da página">
+      <ul role="list">
+        <li><a href="#experimente">Experimente</a></li>
+        <li><a href="#como">Como funciona</a></li>
+        <li><a href="#exercicios">Exercícios</a></li>
+        <li><a href="#voz">Comandos de voz</a></li>
+        <li><a href="#equipe">Equipe</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="conteudo">
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">Exercício guiado por voz</p>
+        <h1>O treinador de exercícios <span>que enxerga por você.</span></h1>
+        <p class="lead">O GuiaMove foi feito para pessoas cegas ou com baixa visão. Uma câmera acompanha o corpo e uma voz avisa, na hora, o que ajustar. Ninguém precisa olhar para tela nenhuma.</p>
+        <div class="actions">
+          <a class="btn primary" href="#experimente">Experimente agora</a>
+          <a class="btn ghost" href="https://github.com/TulioH4/GuiaMove">Ver o projeto no GitHub</a>
+        </div>
+      </div>
+      <div class="hero-art">
+        <img src="assets/logo-icon.svg" alt="Ícone do GuiaMove: uma pessoa em movimento cercada por ondas de som." width="420" height="305">
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="experimente">
+    <div class="wrap">
+      <h2>Experimente na FETIN</h2>
+      <p>É só ficar de pé diante da câmera e falar.</p>
+      <ol class="steps row" role="list">
+        <li>
+          <div>
+            <h3>Fique de frente para a câmera</h3>
+            <p>Ela é um sensor chamado Kinect. Deixe o corpo inteiro à vista, da cabeça aos pés. Se algo ficar cortado, o sistema avisa.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Diga “iniciar”</h3>
+            <p>Ele confere se você está bem enquadrado, explica o exercício e começa.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Agache e ouça as dicas</h3>
+            <p>Se o joelho ou o tronco saírem do lugar, a voz avisa na hora. Ela também conta as repetições.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="block soft" id="como">
+    <div class="wrap how">
+      <div>
+        <h2>Como funciona</h2>
+        <p>Sem sensores no corpo e sem equipamento especial. Só uma câmera, um computador e a voz.</p>
+        <ol class="steps" role="list">
+          <li>
+            <div>
+              <h3>Uma câmera vê você</h3>
+              <p>Um Kinect (ou uma webcam comum) acompanha o corpo inteiro, de frente.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>A inteligência artificial encontra o seu corpo</h3>
+              <p>Ela marca onde estão ombros, cotovelos, quadris, joelhos e pés, várias vezes por segundo. Com esses pontos, o sistema mede se o movimento está certo.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Uma voz diz o que ajustar</h3>
+              <p>Se o joelho cede para dentro ou o tronco inclina, você ouve na hora. O sistema também explica o exercício e conta as repetições.</p>
+            </div>
+          </li>
+        </ol>
+        <p class="note">Antes de começar, ele confere o enquadramento e avisa se falta luz ou se a cabeça e os pés estão cortados.</p>
+      </div>
+      <figure class="figura">
+        <img src="assets/pose-corpo.svg" alt="Desenho de uma pessoa de frente, dentro do visor de uma câmera, com pontos marcando ombros, cotovelos, pulsos, quadris, joelhos e tornozelos." width="360" height="440">
+        <figcaption>O sistema marca esses pontos no seu corpo para medir o movimento.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="block" id="exercicios">
+    <div class="wrap">
+      <h2>Exercícios</h2>
+      <div class="cards three">
+        <article class="card">
+          <h3>Agachamento</h3>
+          <ul>
+            <li>Joelho cedendo para dentro</li>
+            <li>Tronco inclinado para o lado</li>
+            <li>Os dois joelhos dobrando por igual</li>
+          </ul>
+          <span class="tag">Conta as repetições (meta: 5)</span>
+        </article>
+        <article class="card">
+          <h3>Postura em pé</h3>
+          <ul>
+            <li>Ombros e quadril na mesma altura</li>
+            <li>Tronco inclinado para o lado</li>
+          </ul>
+          <span class="tag">Avaliação em pé</span>
+        </article>
+        <article class="card">
+          <h3>Equilíbrio em uma perna</h3>
+          <ul>
+            <li>Altura da perna levantada</li>
+            <li>Balanço do tronco</li>
+            <li>Quadril caindo para um lado</li>
+          </ul>
+          <span class="tag">Avisa quando o corpo balança</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="block soft" id="voz">
+    <div class="wrap voz">
+      <div>
+        <h2>Tudo pela voz</h2>
+        <p>Quem se exercita comanda o sistema falando, sem tocar em botão nenhum.</p>
+        <ul class="chips" role="list" aria-label="Comandos de voz">
+          <li>“iniciar”</li>
+          <li>“pausar”</li>
+          <li>“continuar”</li>
+          <li class="strong">“parar”</li>
+          <li>“agachamento”</li>
+          <li>“equilíbrio”</li>
+          <li>“postura”</li>
+          <li>“aumentar volume”</li>
+          <li>“falar mais devagar”</li>
+          <li>“repetir”</li>
+          <li>“ajuda”</li>
+        </ul>
+        <p class="note">“Parar” funciona sempre, até no meio de uma fala do sistema. Quem acompanha vê tudo numa tela: o vídeo, um boneco 3D que imita o movimento, os avisos de postura e tudo o que o sistema falou. No fim, dá para salvar um relatório da sessão.</p>
+      </div>
+      <div>
+        <h3>O que você ouve</h3>
+        <ul class="fala" role="list" aria-label="Exemplos do que o GuiaMove fala">
+          <li>Primeira repetição contou, ritmo bom. Faça mais 4 repetições, no mesmo ritmo.</li>
+          <li>Seu joelho esquerdo está cedendo muito para dentro. Empurre o joelho para fora, alinhado com o segundo dedo do pé.</li>
+          <li>Não contou, foi rápido demais. Desça contando até dois e suba contando até dois.</li>
+          <li>Série completa, 5 repetições. Bom trabalho!</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="tecnologia">
+    <div class="wrap">
+      <h2>Onde estamos e para onde vamos</h2>
+      <p>Hoje o GuiaMove funciona melhor de frente para a câmera, com o corpo inteiro à vista e o ambiente bem iluminado. Ele apoia exercícios simples e não faz diagnóstico. O próximo passo é um painel pensado primeiro para leitores de tela, para a própria pessoa cega usar sozinha.</p>
+      <details class="mais">
+        <summary>Para quem quer saber como é feito</summary>
+        <dl class="tec">
+          <dt>Kinect</dt>
+          <dd>Sensor de movimento com câmera, que vê a pessoa de corpo inteiro. Sem ele, uma webcam comum também serve.</dd>
+          <dt>MediaPipe</dt>
+          <dd>Ferramenta de inteligência artificial do Google que reconhece o corpo numa imagem e marca 33 pontos, como ombros, joelhos e pés.</dd>
+          <dt>Python</dt>
+          <dd>A linguagem em que o programa foi escrito. Ele calcula os ângulos do corpo e decide o que falar.</dd>
+          <dt>Flask e Socket.IO</dt>
+          <dd>Levam os dados ao vivo para a tela de quem acompanha, no navegador.</dd>
+          <dt>three.js</dt>
+          <dd>Desenha o boneco 3D que imita o movimento.</dd>
+          <dt>Web Speech API</dt>
+          <dd>Recurso do navegador que entende os comandos falados.</dd>
+        </dl>
+      </details>
+    </div>
+  </section>
+
+  <section class="block soft" id="equipe">
+    <div class="wrap">
+      <h2>Equipe</h2>
+      <div class="inst">
+        <span class="pill">FETIN</span>
+        <span>Instituto Nacional de Telecomunicações (Inatel)</span>
+      </div>
+      <p>Orientação: <strong>Elisa Rennó C Dester</strong></p>
+      <ul class="team" role="list">
+        <li><span class="ini" aria-hidden="true">TS</span><div><strong>Túlio Henrique Gonçalves Simões</strong><span>Engenharia de Produção</span></div></li>
+        <li><span class="ini" aria-hidden="true">AB</span><div><strong>André Soares Barbosa</strong><span>Engenharia de Computação</span></div></li>
+        <li><span class="ini" aria-hidden="true">JF</span><div><strong>João Paulo Rangel Fernandes</strong><span>Engenharia de Automação</span></div></li>
+        <li><span class="ini" aria-hidden="true">JS</span><div><strong>João Vitor Lima da Silveira</strong><span>Engenharia de Software</span></div></li>
+      </ul>
+      <p class="thanks">Agradecimento especial à colaboração de <strong>Gustavo Almeida Barrios</strong>, aluno do Inatel com deficiência visual.</p>
+    </div>
+  </section>
+
+  <section class="fim" aria-labelledby="fim-titulo">
+    <div class="wrap">
+      <h2 id="fim-titulo">Quer acompanhar o projeto?</h2>
+      <p>O código do GuiaMove está disponível no GitHub, com o passo a passo para rodar em casa.</p>
+      <div class="actions">
+        <a class="btn primary" href="https://github.com/TulioH4/GuiaMove">Ver o projeto no GitHub</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="cols">
+      <div>
+        <img src="assets/logo-wordmark-dark.svg" alt="GuiaMove" width="140" height="25">
+        <p>Exercício guiado por voz para pessoas cegas ou com baixa visão.</p>
+        <p>Projeto acadêmico desenvolvido por estudantes do Instituto Nacional de Telecomunicações (Inatel) e apresentado na FETIN.</p>
+      </div>
+      <nav aria-label="Atalhos do rodapé">
+        <h2>Nesta página</h2>
+        <ul role="list">
+          <li><a href="#experimente">Experimente</a></li>
+          <li><a href="#como">Como funciona</a></li>
+          <li><a href="#exercicios">Exercícios</a></li>
+          <li><a href="#voz">Comandos de voz</a></li>
+          <li><a href="#equipe">Equipe</a></li>
+        </ul>
+      </nav>
+      <div>
+        <h2>Aviso importante</h2>
+        <p>O GuiaMove apoia a prática de exercícios simples e não substitui a orientação de um profissional de educação física ou de saúde.</p>
+      </div>
+    </div>
+    <div class="legal">
+      <p><strong>© 2026 GuiaMove.</strong> Todos os direitos reservados.</p>
+      <p>Esta página não usa cookies nem rastreadores.</p>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

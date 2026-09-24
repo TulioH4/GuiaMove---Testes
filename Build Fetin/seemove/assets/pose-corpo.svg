@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 440" role="img" aria-label="Desenho de uma pessoa de frente, dentro de um visor de câmera, com pontos azuis marcando ombros, cotovelos, pulsos, quadris, joelhos e tornozelos.">
+  <!-- visor da câmera -->
+  <g fill="none" stroke="#1BAEEE" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 80V44A24 24 0 0 1 44 20H80"/>
+    <path d="M280 20H316A24 24 0 0 1 340 44V80"/>
+    <path d="M20 360V396A24 24 0 0 0 44 420H80"/>
+    <path d="M340 360V396A24 24 0 0 1 316 420H280"/>
+  </g>
+  <!-- ondas de som (mesmo traço da marca) -->
+  <g fill="none" stroke="#1BAEEE" stroke-width="7" stroke-linecap="round" opacity=".55">
+    <path d="M268 156Q292 222 268 288"/>
+    <path d="M292 128Q334 222 292 316"/>
+    <path d="M92 156Q68 222 92 288"/>
+    <path d="M68 128Q26 222 68 316"/>
+  </g>
+  <!-- chão -->
+  <ellipse cx="180" cy="396" rx="100" ry="9" fill="#303A46" opacity=".85"/>
+  <!-- ossos -->
+  <g fill="none" stroke="#0061AE" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 132L232 132"/>
+    <path d="M128 132L154 246L206 246L232 132"/>
+    <path d="M128 132L104 196L118 254"/>
+    <path d="M232 132L256 196L242 254"/>
+    <path d="M154 246L136 318L140 384"/>
+    <path d="M206 246L224 318L220 384"/>
+  </g>
+  <path d="M180 114V246" fill="none" stroke="#1BAEEE" stroke-width="5" stroke-linecap="round"/>
+  <!-- cabeça -->
+  <circle cx="180" cy="80" r="24" fill="#0061AE"/>
+  <!-- pontos das articulações -->
+  <g fill="#1BAEEE" stroke="#FFFFFF" stroke-width="4">
+    <circle cx="180" cy="114" r="8"/>
+    <circle cx="128" cy="132" r="11"/>
+    <circle cx="232" cy="132" r="11"/>
+    <circle cx="104" cy="196" r="11"/>
+    <circle cx="256" cy="196" r="11"/>
+    <circle cx="118" cy="254" r="11"/>
+    <circle cx="242" cy="254" r="11"/>
+    <circle cx="154" cy="246" r="11"/>
+    <circle cx="206" cy="246" r="11"/>
+    <circle cx="136" cy="318" r="11"/>
+    <circle cx="224" cy="318" r="11"/>
+    <circle cx="140" cy="384" r="11"/>
+    <circle cx="220" cy="384" r="11"/>
+  </g>
+</svg>

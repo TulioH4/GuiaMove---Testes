@@ -1,0 +1,720 @@
+"""
+core/session.py
+Loop principal do GuiaMove — baseado inteiramente no Kinect + MediaPipe.
+Sem sensores de pressão.
+
+Pipeline em 3 estágios, cada um na sua própria thread, ligados por filas
+limitadas (drop-oldest — nunca acumula atraso):
+
+  1. Captura + MediaPipe   → KinectTracker._loop (inalterado)
+     chama Session._enqueue_frame, que só empurra o frame numa fila —
+     nunca espera análise nem rede, então a câmera nunca trava.
+  2. Análise biomecânica   → Session._analysis_loop (thread nova)
+     roda exercise.analyze + a máquina de estados de feedback (que
+     dispara áudio) + o reporter, e empurra um snapshot pronto numa
+     segunda fila.
+  3. Broadcast Socket.IO   → Session._broadcast_loop (thread nova)
+     consome a fila de snapshots e chama web_push, limitado a no
+     máximo 30 pacotes por segundo.
+
+Máquina de estados de feedback:
+  STOPPED     → mudo por padrão — nenhuma análise nem áudio até "Iniciar"
+  SETUP       → Modo Configuração: calibrando o enquadramento (ver CalibrationManager)
+  PAUSED      → mudo temporariamente (Pausar/Retomar)
+  BRIEFING    → explicando o movimento antes de monitorar (start_message)
+  IDLE        → monitorando silenciosamente (postura OK)
+  INSTRUCTING → desvio detectado, instrução emitida, aguardando correção
+  WAITING     → janela de silêncio (5s) para o usuário corrigir
+  CONFIRMING  → corrigiu — emite confirmação positiva uma vez
+  REINFORCING → não corrigiu — reforça com dica adicional
+"""
+
+import queue
+import time
+import threading
+import traceback
+from enum import Enum
+from typing import Optional
+
+from core.kinect_tracker import KinectTracker
+from core.skeleton import SkeletonFrame
+from core.calibration_manager import CalibrationManager
+from exercises.base import Exercise, FeedbackResult, Severity
+from reports.reporter import SessionReporter
+from config.settings import Settings
+from audio.tts_engine import TTSEngine
+from audio.sonification import SonificationEngine
+from audio.coordinator import AudioCoordinator
+
+
+class FeedbackState(Enum):
+    STOPPED     = "stopped"
+    SETUP       = "setup"
+    PAUSED      = "paused"
+    BRIEFING    = "briefing"
+    IDLE        = "idle"
+    INSTRUCTING = "instructing"
+    WAITING     = "waiting"
+    CONFIRMING  = "confirming"
+    REINFORCING = "reinforcing"
+
+
+CONFIRMATIONS = [
+    "Isso, muito bom.",
+    "Perfeito, continue assim.",
+    "Ótimo, está correto.",
+    "Muito bem.",
+    "Excelente.",
+]
+
+_WAITING_EXERCISE_MSG = FeedbackResult("Aguardando início do exercício.", False, Severity.OK, "")
+_PAUSED_MSG           = FeedbackResult("Pausado.", False, Severity.OK, "")
+_BRIEFING_MSG         = FeedbackResult("Explicando o movimento.", False, Severity.OK, "")
+_CAMERA_LOST_MSG      = FeedbackResult("A câmera parou de enviar imagem.", False, Severity.WARN, "Câmera sem imagem.")
+
+
+def _put_drop_oldest(q: "queue.Queue", item):
+    """queue.put não bloqueante — descarta o item mais antigo se a fila
+    estiver cheia, em vez de acumular atraso (produtor nunca espera)."""
+    try:
+        q.put_nowait(item)
+    except queue.Full:
+        try:
+            q.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            q.put_nowait(item)
+        except queue.Full:
+            pass
+
+
+class Session:
+    WAIT_WINDOW_S  = 5.0
+    CONFIRM_FRAMES = 8       # frames OK consecutivos para confirmar
+    REINFORCE_MAX  = 2       # máximo de reforços antes de pausa longa
+    BRIEFING_TIMEOUT_S = 120.0  # teto de espera: agachamento ~30 s falado no ritmo normal (estimado 49 s); até ~90 s na voz mais lenta
+    BROADCAST_MAX_FPS  = 30
+    # A captura/boneco roda a até 30 Hz, mas toda a lógica de exercício
+    # (fases, confirmação por N frames, reforço, reporter) foi calibrada em
+    # ~10 quadros/s — analisa no máximo nesse ritmo; os quadros entre uma
+    # análise e outra só alimentam o boneco 3D com o último resultado.
+    ANALYSIS_MIN_INTERVAL_S = 0.09
+    # Quedas curtas de detecção (o MediaPipe perde a pessoa por 1-3 quadros
+    # em qualquer movimento rápido/oclusão) NÃO podem contar como "pessoa
+    # sumiu": antes, um quadro ruim no fundo do agachamento zerava a fase
+    # (repetição perdida sem aviso) e ainda disparava a fala "Posicione-se em
+    # frente à câmera". Durante essa janela mantém o último resultado e
+    # congela a análise/máquina de estados; só depois disso vale a perda.
+    DETECTION_GRACE_S = 0.8
+
+    def __init__(self,
+                 tracker: KinectTracker,
+                 tts: TTSEngine,
+                 sonification: SonificationEngine,
+                 exercise: Exercise,
+                 settings: Settings,
+                 reporter: SessionReporter,
+                 web_push=None):
+        self.tracker      = tracker
+        self.tts          = tts
+        self.sonification = sonification
+        self.exercise     = exercise
+        self.settings     = settings
+        self.reporter     = reporter
+        self.web_push     = web_push
+
+        self.audio = AudioCoordinator(
+            tts, sonification, settings.voice, settings.sonification_enabled
+        )
+        self.calibration = CalibrationManager(self.audio, on_success=self._on_calibration_success)
+
+        # Muda por padrão — só sai de STOPPED quando start_exercise() é
+        # chamado explicitamente pelo botão "Iniciar" do dashboard/CLI.
+        self._state           = FeedbackState.STOPPED
+        self._pre_pause_state = FeedbackState.STOPPED
+        self._state_since     = time.time()
+        self._last_msg        = ""
+        self._ok_frames       = 0
+        self._reinforce_count = 0
+        self._confirm_idx     = 0
+        self._session_start   = time.time()
+        # RLock (não Lock): _on_calibration_success() é chamado de dentro de
+        # calibration.feed(), que roda dentro de _process_frame() já com o
+        # lock adquirido — precisa reentrar na mesma thread pra poder mudar
+        # de estado (voltar a STOPPED ou seguir pro start_exercise pendente).
+        self._lock             = threading.RLock()
+        self._stop_event       = threading.Event()
+        self._calibration_done   = False
+        self._pending_exercise: Optional[Exercise] = None
+
+        self._frame_queue:  "queue.Queue" = queue.Queue(maxsize=2)
+        self._render_queue: "queue.Queue" = queue.Queue(maxsize=2)
+        self._analysis_thread:  Optional[threading.Thread] = None
+        self._broadcast_thread: Optional[threading.Thread] = None
+
+        # Sinal sonoro de repetição contabilizada/rejeitada (exercícios de
+        # repetição, ex. agachamento) — lê `exercise.repetitions`/
+        # `rejected_reps`/`last_rep_cadence`, atributos públicos que já
+        # existem no Exercise, em vez de exigir um canal de eventos novo
+        # entre Exercise e AudioCoordinator.
+        self._last_rep_count      = 0
+        self._last_rejected_reps  = 0
+        self._last_shallow_reps    = 0
+        self._last_analysis_ts    = 0.0
+        self._last_result         = None
+        self._last_summary        = None
+        self._last_posture_rej     = 0
+        self._lost_since          = None
+        self._last_error_report   = 0.0
+        self._last_broadcast_error = 0.0
+        # R1: câmera sem imagem (avisada pelo rastreador). Enquanto durar, ninguém é analisado nem contado.
+        self._camera_lost         = False
+        self._camera_alert_ts     = 0.0
+        # R6: as linhas de acompanhamento do terminal passam por uma fila e uma thread própria.
+        self._console_queue: "queue.Queue" = queue.Queue(maxsize=200)
+        self._console_thread: Optional[threading.Thread] = None
+        self._last_log_key        = None
+        self._last_log_ts         = 0.0
+
+    # ── Início / Pausa / Parada de exercício ────────────────────────────────
+
+    def set_exercise(self, exercise: Exercise):
+        """
+        Só troca o exercício ativo, sem entrar em BRIEFING — usado quando o
+        usuário apenas seleciona um exercício na aba (antes de clicar
+        'Iniciar'). A troca em si (rebind de referência) já é atômica sem
+        lock, mas todo o resto do estado da Session segue a disciplina de
+        só ler/escrever sob self._lock — deixar essa escrita de fora era a
+        única exceção inconsistente, sem motivo real pra ser.
+        """
+        with self._lock:
+            # Reselecionar o MESMO exercício (clique repetido na aba, comando
+            # de voz repetido ou reconhecido por engano) não pode trocar o
+            # objeto: a rota cria uma instância nova a cada chamada, e isso
+            # zerava contagem de repetições e fase do movimento no meio da
+            # série. Trocar por OUTRO exercício continua valendo.
+            if type(exercise) is type(self.exercise):
+                return
+            self.exercise = exercise
+            self._last_rep_count     = 0
+            self._last_rejected_reps = 0
+            self._last_shallow_reps  = 0
+            self._last_posture_rej   = 0
+
+    def start_exercise(self, exercise: Exercise, intro: str = ""):
+        """
+        Troca o exercício ativo e entra na fase BRIEFING: explica o
+        movimento por completo (exercise.start_message) antes de começar
+        a monitorar/corrigir — evita que uma correção seja falada por
+        cima da explicação inicial.
+
+        Gatilho autônomo do Modo Configuração: se o enquadramento ainda
+        não foi validado nesta sessão, redireciona para start_setup() em
+        vez de ir direto pro BRIEFING — a calibração acontece primeiro e,
+        ao suceder, este mesmo exercício é retomado automaticamente
+        (_on_calibration_success), sem exigir nenhum clique extra.
+        """
+        with self._lock:
+            already_calibrated = self._calibration_done
+        if not already_calibrated:
+            self.start_setup(pending_exercise=exercise)
+            return
+
+        with self._lock:
+            self._begin_session_if_stopped()
+            self.exercise         = exercise
+            self._ok_frames       = 0
+            self._reinforce_count = 0
+            self._last_rep_count     = 0
+            self._last_rejected_reps = 0
+            self._last_shallow_reps  = 0
+            self._last_posture_rej   = 0
+            self._set_state(FeedbackState.BRIEFING)
+
+        # speak_now() já loga essa fala no painel visual sozinho
+        # (AudioCoordinator.log_push) — não precisa duplicar aqui.
+        # `intro` (ex.: "Enquadramento perfeito. " vindo da calibração) vai
+        # NA MESMA fala do briefing: duas falas seguidas com cancel=True se
+        # cortavam — a primeira nem chegava a ser ouvida.
+        # Vindo da calibração (`intro`) entra na FILA: a abertura ou a última instrução ainda pode estar no ar e a
+        # estimativa de "acabou" pode errar para menos; "Iniciar" pedido pela pessoa continua cortando o que falava.
+        self.audio.speak_now(intro + exercise.start_message, interrupt=not intro)
+
+        threading.Thread(target=self._finish_briefing, daemon=True).start()
+
+    def _finish_briefing(self):
+        self.audio.wait_speech_done(timeout=self.BRIEFING_TIMEOUT_S)
+        with self._lock:
+            if self._state == FeedbackState.BRIEFING:
+                self._set_state(FeedbackState.IDLE)
+
+    # ── Modo Configuração (calibração de enquadramento) ─────────────────────
+
+    def start_setup(self, pending_exercise: Optional[Exercise] = None):
+        """
+        Inicia o Modo Configuração — calibra o enquadramento antes de
+        liberar qualquer exercício. `pending_exercise` é setado quando
+        start_exercise() redireciona pra cá automaticamente (o exercício
+        pedido é retomado sozinho após a calibração); None quando disparado
+        manualmente pelo botão dedicado "Iniciar configuração".
+        """
+        with self._lock:
+            self._pending_exercise = pending_exercise
+            self._set_state(FeedbackState.SETUP)
+        self.calibration.start()
+        self.audio.speak_now(
+            "Vamos calibrar o enquadramento. Fique de corpo inteiro em "
+            "frente à câmera."
+        )
+
+    def _on_calibration_success(self):
+        """Callback do CalibrationManager — chamado de dentro de
+        calibration.feed(), já rodando na thread de análise com o lock
+        (reentrante) adquirido."""
+        with self._lock:
+            self._calibration_done = True
+            pending = self._pending_exercise
+            self._pending_exercise = None
+        if pending is not None:
+            self.start_exercise(pending, intro="Enquadramento perfeito. ")
+        else:
+            with self._lock:
+                self._set_state(FeedbackState.STOPPED)
+            self.audio.speak_now(
+                "Enquadramento perfeito! Você já pode iniciar o exercício "
+                "por comando de voz.", Severity.OK, interrupt=False)
+
+    def pause_exercise(self):
+        """Muda a análise/áudio imediatamente, sem perder o exercício ativo."""
+        with self._lock:
+            # SETUP fica de fora: retomar mandaria pra IDLE sem calibração
+            # concluída (a calibração se cancela com Parar).
+            if self._state in (FeedbackState.STOPPED, FeedbackState.PAUSED,
+                               FeedbackState.SETUP):
+                return
+            self._pre_pause_state = self._state
+            self._set_state(FeedbackState.PAUSED)
+        self.audio.stop_all()
+
+    def resume_exercise(self):
+        """Retoma a análise a partir de um ciclo limpo (IDLE)."""
+        with self._lock:
+            if self._state != FeedbackState.PAUSED:
+                return
+            self._ok_frames       = 0
+            self._reinforce_count = 0
+            self._set_state(FeedbackState.IDLE)
+
+    def stop_exercise(self):
+        """Silencia tudo e volta ao estado mudo inicial — precisa clicar
+        'Iniciar' de novo para retomar. Também aborta uma calibração
+        pendente, se houver."""
+        with self._lock:
+            self._set_state(FeedbackState.STOPPED)
+            self._ok_frames       = 0
+            self._reinforce_count = 0
+            self._pending_exercise = None
+        self.audio.stop_all()
+
+    def _begin_session_if_stopped(self):
+        """Nova rodada (outra pessoa, ou a mesma recomeçando): quando o exercício COMEÇA de verdade (entra em
+        BRIEFING vindo de STOPPED ou da calibração), o relatório e o cronômetro recomeçam do zero. Antes a aba
+        Sessão e o relatório somavam TODOS os visitantes desde a abertura do programa. Parar — e até rodar a
+        calibração — mantém os números da rodada anterior na tela (dá para ver e baixar o relatório); pausar/
+        retomar não zeram. Chamar com o lock."""
+        if self._state in (FeedbackState.STOPPED, FeedbackState.SETUP):
+            self.reporter.reset()
+            self._session_start = time.time()
+
+    # ── Câmera (R1) ───────────────────────────────────────────────────────
+
+    CAMERA_REMINDER_S = 20.0
+
+    def camera_problem(self, kind: str = "lost"):
+        """Chamado pelo rastreador quando a câmera para de mandar imagem ("lost") ou não abre/encerra
+        ("failed"). Fala na hora e repete a cada CAMERA_REMINDER_S enquanto durar; sem isto o sistema dizia
+        "Posicione-se em frente à câmera" (a causa errada) e só o painel mostrava o erro."""
+        now = time.time()
+        with self._lock:
+            self._camera_lost = True
+            due = now - self._camera_alert_ts >= self.CAMERA_REMINDER_S
+            if due:
+                self._camera_alert_ts = now
+        if due:
+            if kind == "failed":
+                msg = "Não consegui usar a câmera. Peça ajuda a alguém da equipe."
+            else:
+                msg = "A câmera parou de enviar imagem. Peça ajuda a alguém da equipe."
+            self.audio.speak_now(msg, Severity.WARN)
+
+    def camera_ok(self):
+        """A câmera voltou a mandar imagem."""
+        with self._lock:
+            was_lost = self._camera_lost
+            self._camera_lost = False
+            self._camera_alert_ts = 0.0
+        if was_lost:
+            self.audio.speak_now("A câmera voltou a funcionar.", Severity.OK)
+
+    # ── Estágio 1: captura → fila (rápido, nunca bloqueia a câmera) ────────
+
+    def _enqueue_frame(self, frame: SkeletonFrame):
+        _put_drop_oldest(self._frame_queue, frame)
+
+    # ── Estágio 2: análise biomecânica + máquina de estados ────────────────
+
+    def _analysis_loop(self):
+        while not self._stop_event.is_set():
+            try:
+                frame = self._frame_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                self._process_frame(frame)
+            except Exception:
+                # Um erro em UM quadro (ex.: divisão por zero numa checagem
+                # de exercício) não pode matar esta thread: sem ela o
+                # dashboard inteiro congela (boneco, métricas e áudio) e
+                # nada avisa. Registra (no máx. 1x a cada 5 s, pra não
+                # inundar o terminal a 10 Hz) e segue com o próximo quadro,
+                # ainda entregando a pose ao boneco 3D.
+                now = time.time()
+                if now - self._last_error_report > 5.0:
+                    self._last_error_report = now
+                    print("[sessão] erro ao analisar quadro (seguindo):\n"
+                          + traceback.format_exc())
+                if self.web_push:
+                    _put_drop_oldest(
+                        self._render_queue,
+                        (frame, self._last_result or _WAITING_EXERCISE_MSG,
+                         self._last_summary))
+
+    def _process_frame(self, frame: SkeletonFrame):
+        now = time.time()
+        if (self._last_result is not None
+                and now - self._last_analysis_ts < self.ANALYSIS_MIN_INTERVAL_S):
+            if self.web_push:
+                _put_drop_oldest(self._render_queue, (frame, self._last_result, self._last_summary))
+            return
+        self._last_analysis_ts = now
+        with self._lock:
+            state = self._state
+            hold  = False     # True: perda curta de detecção, mantém o último resultado
+            if state == FeedbackState.STOPPED:
+                result = _WAITING_EXERCISE_MSG
+            elif state == FeedbackState.PAUSED:
+                result = _PAUSED_MSG
+            elif self._camera_lost:
+                # Sem imagem não dá para saber se há alguém: mostra a causa real, não entra nas estatísticas
+                # (hold=True) e a calibração não fala "nenhuma pessoa detectada".
+                result = _CAMERA_LOST_MSG
+                hold   = True
+            elif state == FeedbackState.BRIEFING:
+                # Não analisa nem conta repetição durante a explicação
+                # falada do movimento — sem isso, alguém que já começa a se
+                # mexer assim que ouve a última instrução ("dobre os
+                # joelhos devagar") podia completar um ciclo antes da
+                # narração terminar, e _check_rep_signal() cortava a própria
+                # explicação no meio com um bipe/fala de repetição rejeitada
+                # (mesma classe de bug do áudio cortando áudio que já
+                # apareceu em outros lugares nesta sessão).
+                result = _BRIEFING_MSG
+            elif state == FeedbackState.SETUP:
+                framing = self.calibration.feed(frame)
+                result = FeedbackResult(
+                    framing.message or "Calibrando enquadramento...",
+                    False,
+                    Severity.OK if framing.ok else Severity.WARN,
+                    framing.issue.value,
+                )
+            else:
+                hold = self._holding_through_dropout(frame)
+                if hold:
+                    result = self._last_result
+                else:
+                    result = self.exercise.analyze(frame)
+                    self._check_rep_signal()
+
+            # Só entra nas estatísticas o que foi de fato MONITORADO: quadros
+            # de "aguardando início", pausa, briefing falado e calibração
+            # eram contados como "postura correta" e inflavam o ok_pct do
+            # relatório (10 min parado + 1 min de exercício ruim = ~90% OK).
+            monitored = state not in (FeedbackState.STOPPED, FeedbackState.PAUSED,
+                                      FeedbackState.BRIEFING, FeedbackState.SETUP)
+            if monitored and not hold:
+                summary = self.reporter.record_skeleton(frame, result)
+            else:
+                summary = self.reporter.summary()
+            if not hold:
+                self._tick(frame, result)
+
+            self._console_log(now, frame, result)
+
+        self._last_result, self._last_summary = result, summary
+        if self.web_push:
+            _put_drop_oldest(self._render_queue, (frame, result, summary))
+
+    def _console_log(self, now: float, frame: SkeletonFrame, result: FeedbackResult):
+        """Linha de acompanhamento no terminal (com result.detail: fase/ângulo/repetições, para diagnosticar).
+        Só sai quando algo muda (estado, detecção, gravidade ou frase) ou a cada 2 s — antes eram ~10 linhas por
+        segundo, escritas DENTRO do lock da sessão: se o console travasse (texto selecionado no console clássico
+        do Windows), tudo parava, até o Parar. Agora só entra numa fila e uma thread própria imprime."""
+        key = (self._state.value, frame.detected, result.severity.value, result.message)
+        if key == self._last_log_key and now - self._last_log_ts < 2.0:
+            return
+        self._last_log_key, self._last_log_ts = key, now
+        elapsed = int(now - self._session_start)
+        m, s = divmod(elapsed, 60)
+        det  = "✓" if frame.detected else "✗"
+        conf = f"{frame.metrics.confidence:.0f}%" if frame.detected else "—"
+        sev  = result.severity.value
+        extra = f"  ({result.detail})" if result.detail else ""
+        line = (f"  {m:02d}:{s:02d}  [{det}] conf={conf}  "
+                f"state={self._state.value:<12}  [{sev}] {result.message[:60]}{extra}")
+        try:
+            self._console_queue.put_nowait(line)
+        except queue.Full:
+            pass
+
+    def _console_worker(self):
+        while not self._stop_event.is_set():
+            try:
+                line = self._console_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            try:
+                print(line)
+            except Exception:
+                pass
+
+    def _holding_through_dropout(self, frame: SkeletonFrame) -> bool:
+        """True enquanto a pessoa some por menos de DETECTION_GRACE_S: a
+        análise e a máquina de estados ficam congeladas no último resultado
+        (ver DETECTION_GRACE_S). Chamado só nos estados em que o exercício
+        está sendo monitorado."""
+        if not self.exercise.detection_lost(frame):
+            self._lost_since = None
+            return False
+        if self._last_result is None:
+            return False
+        now = time.time()
+        if self._lost_since is None:
+            self._lost_since = now
+        return now - self._lost_since < self.DETECTION_GRACE_S
+
+    def _check_rep_signal(self):
+        """Sinal sonoro quando o Exercise ativo contabiliza (ou rejeita)
+        uma repetição — lido via `exercise.repetitions`/`rejected_reps`/
+        `last_rep_cadence`, atributos públicos que já existem (não todo
+        Exercise tem, daí o getattr com default: StaticPostureExercise/
+        UnipodialBalanceExercise não contam repetição, vira no-op pra eles).
+
+        `repetitions` só sobe com cadência boa; um ciclo completo mas
+        rápido/devagar demais vai pra `rejected_reps` em vez de contar —
+        aqui só decidimos o SINAL certo pra cada caso, sem duplicar essa
+        regra (ela mora inteira no Exercise).
+
+        Chime, e fala só quando REJEITA: um bipe curto de sucesso não
+        compete com a máquina de correção de postura em _tick() (que
+        continua sendo a única coisa que decide o que é falado no caminho
+        normal) — mas quando a repetição não conta, a pessoa precisa saber
+        o motivo, senão fica sem entender por que o número não subiu.
+        """
+        rep_count = getattr(self.exercise, "repetitions", None)
+        rejected  = getattr(self.exercise, "rejected_reps", None)
+        if rep_count is None:
+            return
+
+        target  = getattr(self.exercise, "target_reps", None)
+        shallow = getattr(self.exercise, "shallow_reps", 0)
+        issue   = getattr(self.exercise, "last_rep_issue", None)
+        # Problema de postura visto durante a repetição que acabou de
+        # fechar — dito no fim dela, pra quem não ouviu/entendeu a correção
+        # em tempo real.
+        issue_tail = f" Atenção neste movimento: {issue}" if issue else ""
+
+        def remaining_tail(prefix=" "):
+            if not target:
+                return ""
+            left = target - rep_count
+            return f"{prefix}Ainda faltam {left}." if left > 0 else ""
+
+        if rep_count != self._last_rep_count:
+            self._last_rep_count = rep_count
+            self.audio.chime("success")
+            remaining = (target - rep_count) if target else None
+            if remaining is not None and rep_count == 1 and remaining > 0:
+                mais = f"Faça mais {remaining} {'repetição' if remaining == 1 else 'repetições'}"
+                if issue:
+                    msg = f"Primeira repetição contou.{issue_tail} {mais}."
+                else:
+                    msg = f"Primeira repetição contou, ritmo bom. {mais}, no mesmo ritmo."
+                self.audio.speak_now(msg, Severity.WARN if issue else Severity.OK, interrupt=False)
+            elif remaining == 0:
+                self.audio.speak_now(
+                    f"Série completa, {target} repetições. Bom trabalho!" + issue_tail,
+                    Severity.OK, interrupt=False)
+            elif issue and not self.audio.is_speaking():
+                self.audio.speak_now("Contou." + issue_tail, Severity.WARN, interrupt=False)
+
+        if rejected is not None and rejected != self._last_rejected_reps:
+            self._last_rejected_reps = rejected
+            self.audio.chime("warning")
+            cadence = getattr(self.exercise, "last_rep_cadence", None)
+            dica = {
+                "rapida_demais": "Não contou, foi rápido demais. Desça contando até dois e suba contando até dois.",
+                "lenta_demais":  "Não contou, foi devagar demais. Tente um ritmo mais contínuo, dois tempos para descer e dois para subir.",
+            }.get(cadence, "Não contou — cadência irregular.")
+            self.audio.speak_now(dica + issue_tail + remaining_tail(), Severity.WARN, interrupt=False)
+
+        posture_rej = getattr(self.exercise, "posture_rejected_reps", 0)
+        if posture_rej != self._last_posture_rej:
+            self._last_posture_rej = posture_rej
+            self.audio.chime("warning")
+            self.audio.speak_now(
+                "Não contou por causa da postura." + issue_tail + remaining_tail(),
+                Severity.WARN, interrupt=False)
+
+        if shallow != self._last_shallow_reps:
+            self._last_shallow_reps = shallow
+            self.audio.chime("warning")
+            self.audio.speak_now(
+                "Não contou, você não desceu o bastante. Dobre mais os joelhos, "
+                "como se fosse sentar numa cadeira, e depois suba."
+                + issue_tail + remaining_tail(), Severity.WARN, interrupt=False)
+
+    # ── Estágio 3: broadcast Socket.IO, limitado a BROADCAST_MAX_FPS ───────
+
+    def _broadcast_loop(self):
+        min_interval = 1.0 / self.BROADCAST_MAX_FPS
+        last_emit = 0.0
+        while not self._stop_event.is_set():
+            try:
+                frame, result, summary = self._render_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+
+            wait = min_interval - (time.time() - last_emit)
+            if wait > 0:
+                time.sleep(wait)
+            last_emit = time.time()
+
+            try:
+                self.web_push(frame, result, summary)
+            except Exception:
+                # Não engole em silêncio: se o envio ao painel falhar sempre (bug no servidor), o boneco e
+                # as métricas congelam sem nenhum aviso. Registra no máx. 1x a cada 5 s, como a análise.
+                now = time.time()
+                if now - self._last_broadcast_error > 5.0:
+                    self._last_broadcast_error = now
+                    print("[sessão] erro ao enviar o quadro ao painel (seguindo):\n"
+                          + traceback.format_exc())
+
+    # ── Máquina de estados ────────────────────────────────────────────────
+
+    def _tick(self, frame: SkeletonFrame, result: FeedbackResult):
+        if self._state in (FeedbackState.STOPPED, FeedbackState.PAUSED,
+                            FeedbackState.BRIEFING, FeedbackState.SETUP):
+            # mudo pra máquina de correção de exercício: aguardando início,
+            # pausado, explicando o movimento, ou calibrando enquadramento
+            # (a CalibrationManager já cuida do próprio áudio nesse caso)
+            return
+
+        ok      = result.severity == Severity.OK
+        elapsed = time.time() - self._state_since
+        direction = self._direction_hint(frame)
+
+        if self._state == FeedbackState.IDLE:
+            if not ok:
+                self._set_state(FeedbackState.INSTRUCTING)
+                self._last_msg        = result.message
+                self._reinforce_count = 0
+                self._ok_frames       = 0
+                self.audio.emit(result.message, result.severity, direction)
+
+        elif self._state == FeedbackState.INSTRUCTING:
+            self._set_state(FeedbackState.WAITING)
+
+        elif self._state == FeedbackState.WAITING:
+            if ok:
+                self._ok_frames += 1
+                if self._ok_frames >= self.CONFIRM_FRAMES:
+                    self._set_state(FeedbackState.CONFIRMING)
+                    if self.settings.voice.confirm_on_correction:
+                        msg = CONFIRMATIONS[self._confirm_idx % len(CONFIRMATIONS)]
+                        self._confirm_idx += 1
+                        # cancel=False: nao corta a frase de correcao que
+                        # ainda pode estar tocando -- a confirmacao entra
+                        # na fila e toca em seguida, em vez de atropelar.
+                        self.audio.emit(msg, Severity.OK, bypass_cooldown=True, cancel=False)
+            else:
+                self._ok_frames = 0
+                self.audio.ambient_tick(direction, 0.0)
+                if self.audio.is_speaking():
+                    # A pessoa só pode reagir depois de ouvir a instrução INTEIRA: a janela de espera conta a partir
+                    # do fim da fala. Antes contava do início e o reforço (a mesma frase) cortava a correção ainda
+                    # em andamento — ou recomeçava no mesmo instante em que ela terminava.
+                    self._state_since = time.time()
+                elif elapsed >= self.WAIT_WINDOW_S:
+                    self._set_state(FeedbackState.REINFORCING)
+                    self._reinforce_count += 1
+                    if self._reinforce_count <= self.REINFORCE_MAX:
+                        self._last_msg = result.message
+                        self.audio.emit(result.message, result.severity, direction)
+                    else:
+                        self.audio.emit(
+                            "Tudo bem, descanse um momento e tente de novo.",
+                            Severity.WARN, bypass_cooldown=True
+                        )
+                        self._reinforce_count = 0
+
+        elif self._state == FeedbackState.CONFIRMING:
+            self._set_state(FeedbackState.IDLE)
+            self._ok_frames = 0
+
+        elif self._state == FeedbackState.REINFORCING:
+            self._set_state(FeedbackState.WAITING)
+            self._ok_frames = 0
+
+    def _direction_hint(self, frame: SkeletonFrame) -> float:
+        """Direção aproximada do desvio para posicionamento estéreo do bipe."""
+        m = frame.metrics
+        raw = m.trunk_lean_x if m.trunk_lean_x else (m.knee_valgus_l - m.knee_valgus_r)
+        return max(-1.0, min(1.0, raw / 15.0))
+
+    def _set_state(self, s: FeedbackState):
+        self._state       = s
+        self._state_since = time.time()
+
+    # ── Run / Stop ────────────────────────────────────────────────────────
+
+    def run(self):
+        self.tracker.on_frame = self._enqueue_frame
+        self._analysis_thread = threading.Thread(
+            target=self._analysis_loop, daemon=True, name="session-analysis"
+        )
+        self._broadcast_thread = threading.Thread(
+            target=self._broadcast_loop, daemon=True, name="session-broadcast"
+        )
+        self._console_thread = threading.Thread(
+            target=self._console_worker, daemon=True, name="session-console"
+        )
+        self._analysis_thread.start()
+        self._broadcast_thread.start()
+        self._console_thread.start()
+
+        print(f"\n  {'TEMPO':>5}  DET  CONF    ESTADO          FEEDBACK")
+        print("  " + "─" * 65)
+        # Espera em fatias curtas: no Windows, Event.wait() SEM timeout não é
+        # interrompível por Ctrl+C (o KeyboardInterrupt só chegaria quando a
+        # espera terminasse — ou seja, nunca), então o "Ctrl+C para
+        # encerrar" do terminal não funcionava.
+        while not self._stop_event.wait(0.5):
+            pass
+
+    def stop(self):
+        self._stop_event.set()
+        for t in (self._analysis_thread, self._broadcast_thread, self._console_thread):
+            if t and t.is_alive():
+                t.join(timeout=2.0)
